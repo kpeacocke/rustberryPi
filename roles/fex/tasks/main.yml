@@ -1,0 +1,134 @@
+---
+- name: Read installed FEX version with the supported tool
+  ansible.builtin.command: /usr/bin/FEXGetConfig --version
+  register: fex_installed
+  changed_when: false
+  failed_when: false
+
+- name: Read separately managed FEX version
+  ansible.builtin.command:
+    argv: ["/opt/fex/{{ fex_commit }}/bin/FEXGetConfig", --version]
+  register: fex_managed
+  changed_when: false
+  failed_when: false
+
+- name: Select adopted or versioned FEX installation
+  ansible.builtin.set_fact:
+    fex_prefix: "{{ '/usr' if fex_installed.rc == 0 and fex_installed.stdout | trim == fex_version else '/opt/fex/' + fex_commit }}"
+
+- name: Build pinned FEX when the installed revision differs
+  when:
+    - fex_prefix != '/usr'
+    - fex_managed.rc != 0 or fex_managed.stdout | trim != fex_version
+  block:
+    - name: Checkout exact source and submodules
+      ansible.builtin.git:
+        repo: https://github.com/FEX-Emu/FEX.git
+        dest: "/usr/local/src/fex-{{ fex_commit }}"
+        version: "{{ fex_commit }}"
+        recursive: true
+        track_submodules: false
+
+    - name: Configure native release build
+      ansible.builtin.command:
+        argv:
+          - cmake
+          - -S
+          - "/usr/local/src/fex-{{ fex_commit }}"
+          - -B
+          - "/usr/local/src/fex-{{ fex_commit }}/build"
+          - -G
+          - Ninja
+          - -DCMAKE_BUILD_TYPE=Release
+          - "-DCMAKE_INSTALL_PREFIX={{ fex_prefix }}"
+          - -DCMAKE_C_COMPILER=clang
+          - -DCMAKE_CXX_COMPILER=clang++
+          - -DUSE_LINKER=lld
+          - -DENABLE_LTO=OFF
+          - -DBUILD_TESTING=OFF
+          - -DBUILD_THUNKS=OFF
+          - "-DOVERRIDE_VERSION={{ fex_version }}"
+      changed_when: true
+
+    - name: Build with bounded memory use
+      ansible.builtin.command:
+        argv: [cmake, --build, "/usr/local/src/fex-{{ fex_commit }}/build", --parallel, '2']
+      changed_when: true
+
+    - name: Install completed build
+      ansible.builtin.command:
+        argv: [cmake, --install, "/usr/local/src/fex-{{ fex_commit }}/build"]
+      changed_when: true
+
+    - name: Refresh shared library cache
+      ansible.builtin.command: ldconfig
+      changed_when: true
+
+- name: Verify desired FEX revision
+  ansible.builtin.command:
+    argv: ["{{ fex_prefix }}/bin/FEXGetConfig", --version]
+  register: fex_verified
+  changed_when: false
+  failed_when: fex_verified.stdout | trim != fex_version
+
+- name: Install RootFS verifier and reference manifest
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "/usr/local/libexec/pi5-rust/{{ item }}"
+    mode: '0644'
+  loop: [rootfs.py, rootfs-manifest.json.gz]
+
+- name: Verify managed RootFS or adopt matching manual content
+  ansible.builtin.command:
+    argv:
+      - python3
+      - /usr/local/libexec/pi5-rust/rootfs.py
+      - "{{ fex_rootfs_path }}"
+      - "{{ fex_existing_rootfs }}"
+  register: fex_rootfs_probe
+  changed_when: fex_rootfs_probe.stdout == 'adopted'
+  failed_when: fex_rootfs_probe.rc not in [0, 3]
+
+- name: Provision pinned RootFS when no matching tree exists
+  when: fex_rootfs_probe.rc == 3
+  block:
+    - name: Create RootFS parent
+      ansible.builtin.file:
+        path: "{{ fex_rootfs_path | dirname }}"
+        state: directory
+        mode: '0755'
+
+    - name: Fetch checksum-pinned image
+      ansible.builtin.get_url:
+        url: "{{ fex_rootfs_url }}"
+        dest: /var/cache/pi5-rust-rootfs.sqsh
+        checksum: "sha256:{{ fex_rootfs_sha256 }}"
+        mode: '0644'
+
+    - name: Extract into a staging tree and verify before activation
+      ansible.builtin.command:
+        argv:
+          - python3
+          - /usr/local/libexec/pi5-rust/rootfs.py
+          - "{{ fex_rootfs_path }}"
+          - "{{ fex_existing_rootfs }}"
+          - /var/cache/pi5-rust-rootfs.sqsh
+      changed_when: true
+
+- name: Check x86 execution as the service account
+  become: true
+  become_user: rust
+  ansible.builtin.command:
+    argv: ["{{ fex_prefix }}/bin/FEX", /usr/bin/uname, -m]
+  environment:
+    HOME: /srv/rust/home
+    FEX_ROOTFS: "{{ fex_rootfs_path }}"
+  register: fex_smoke
+  changed_when: false
+  failed_when: fex_smoke.stdout | trim != 'x86_64'
+
+- name: Remove manual build debris only after successful managed verification
+  ansible.builtin.file:
+    path: /tmp/FEX
+    state: absent
+  when: fex_cleanup_tmp | bool

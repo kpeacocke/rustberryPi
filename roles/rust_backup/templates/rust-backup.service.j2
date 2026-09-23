@@ -1,0 +1,9 @@
+[Unit]
+Description=Consistent Rust state backup to mounted NAS
+RequiresMountsFor=/srv/rust {{ rust_backup_mount }}
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/local/libexec/pi5-rust/backup.py backup --mount {{ rust_backup_mount }} --destination {{ rust_backup_destination }}
+TimeoutStartSec=3600
+UMask=0077

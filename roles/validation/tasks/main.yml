@@ -1,0 +1,5 @@
+---
+- name: Validate actual game readiness
+  ansible.builtin.command: python3 /usr/local/libexec/pi5-rust/health.py 1800
+  changed_when: false
+  when: rust_start | bool

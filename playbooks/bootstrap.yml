@@ -1,0 +1,13 @@
+---
+- name: Prepare Pi kernel and persistent storage
+  hosts: rust_servers
+  become: true
+  pre_tasks:
+    - name: Require a real convergence run for hardware-dependent probes
+      ansible.builtin.assert:
+        that: not ansible_check_mode
+        fail_msg: Use syntax-check and the documented read-only preflight instead of full check mode.
+  roles:
+    - prerequisites
+    - raspberry_pi
+    - rust_storage

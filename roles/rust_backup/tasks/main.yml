@@ -1,0 +1,27 @@
+---
+- name: Validate backup paths for systemd arguments
+  ansible.builtin.assert:
+    that:
+      - rust_backup_mount is match('^/[a-zA-Z0-9_./-]+$')
+      - rust_backup_destination is match('^/[a-zA-Z0-9_./-]+$')
+
+- name: Install backup and restore utility
+  ansible.builtin.copy:
+    src: backup.py
+    dest: /usr/local/libexec/pi5-rust/backup.py
+    mode: '0750'
+
+- name: Configure backup service and timer
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/etc/systemd/system/{{ item }}"
+    mode: '0644'
+  loop: [rust-backup.service, rust-backup.timer]
+  register: rust_backup_units
+
+- name: Set backup timer state
+  ansible.builtin.systemd_service:
+    name: rust-backup.timer
+    daemon_reload: "{{ rust_backup_units.changed }}"
+    enabled: "{{ rust_backup_schedule | length > 0 }}"
+    state: "{{ (rust_backup_schedule | length > 0) | ternary('started', 'stopped') }}"

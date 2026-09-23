@@ -1,0 +1,25 @@
+---
+- name: Install UFW
+  ansible.builtin.apt:
+    name: ufw
+    state: present
+
+- name: Preserve SSH access before enabling firewall
+  community.general.ufw:
+    rule: allow
+    port: "{{ rust_ssh_port | string }}"
+    proto: tcp
+
+- name: Allow game and query traffic from selected clients
+  community.general.ufw:
+    rule: allow
+    port: "{{ item }}"
+    proto: udp
+    from_ip: "{{ rust_client_cidr }}"
+  loop: ['28015', '28017']
+
+- name: Enable incoming deny policy
+  community.general.ufw:
+    state: enabled
+    policy: deny
+    direction: incoming

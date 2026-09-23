@@ -1,0 +1,26 @@
+---
+name: Validate
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - name: Install controller tools
+        run: pip install -r requirements-dev.txt
+      - name: Install pinned collections
+        run: ansible-galaxy collection install -r requirements.yml
+      - name: Lint
+        run: ansible-lint
+      - name: Check playbooks
+        run: |
+          for playbook in playbooks/*.yml; do
+            ansible-playbook "$playbook" --syntax-check
+          done
+      - name: Test safety and protocol helpers
+        run: python -m unittest discover -s tests -v

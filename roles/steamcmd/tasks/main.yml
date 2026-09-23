@@ -1,0 +1,40 @@
+---
+- name: Inspect SteamCMD launcher
+  ansible.builtin.stat:
+    path: /srv/rust/steamcmd/steamcmd.sh
+  register: steamcmd_launcher
+
+- name: Bootstrap SteamCMD once
+  when: not steamcmd_launcher.stat.exists
+  block:
+    - name: Download verified SteamCMD bootstrap
+      ansible.builtin.get_url:
+        url: "{{ steamcmd_url }}"
+        dest: /var/cache/pi5-rust-steamcmd.tar.gz
+        checksum: "sha256:{{ steamcmd_sha256 }}"
+        mode: '0644'
+
+    - name: Extract SteamCMD as Rust account
+      ansible.builtin.unarchive:
+        src: /var/cache/pi5-rust-steamcmd.tar.gz
+        dest: /srv/rust/steamcmd
+        remote_src: true
+        owner: rust
+        group: rust
+
+- name: Install Steam library directory
+  ansible.builtin.file:
+    path: /srv/rust/home/.steam/sdk64
+    state: directory
+    owner: rust
+    group: rust
+    mode: '0750'
+
+- name: Link Steam client library for the dedicated server
+  ansible.builtin.file:
+    src: /srv/rust/steamcmd/linux64/steamclient.so
+    dest: /srv/rust/home/.steam/sdk64/steamclient.so
+    state: link
+    force: true
+    owner: rust
+    group: rust

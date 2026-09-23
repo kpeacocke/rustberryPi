@@ -1,0 +1,15 @@
+.venv/
+.ansible/
+__pycache__/
+*.pyc
+*.retry
+*.log
+*.tar.gz
+*.sqsh
+inventory/host_vars/
+inventory/hosts.local.yml
+inventory/group_vars/rust_servers/local.yml
+*.vault-password
+.env
+.DS_Store
+!roles/fex/files/rootfs-manifest.json.gz

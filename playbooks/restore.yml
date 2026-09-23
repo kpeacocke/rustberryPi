@@ -1,0 +1,21 @@
+---
+- name: Restore a checksum-verified state archive
+  hosts: rust_servers
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Require explicit restore inputs
+      ansible.builtin.assert:
+        that:
+          - rust_restore_archive is defined
+          - rust_restore_sha256 is defined
+          - rust_restore_sha256 is match('^[a-f0-9]{64}$')
+          - rust_restore_confirm | default(false) | bool
+
+    - name: Restore while preserving any previous state
+      ansible.builtin.command:
+        argv: >-
+          {{ ['python3', '/usr/local/libexec/pi5-rust/backup.py', 'restore',
+              '--archive', rust_restore_archive, '--sha256', rust_restore_sha256]
+             + (['--replace'] if rust_restore_replace | default(false) | bool else []) }}
+      changed_when: true

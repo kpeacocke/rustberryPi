@@ -1,0 +1,44 @@
+---
+- name: Check the 4K kernel image exists
+  ansible.builtin.stat:
+    path: /boot/firmware/kernel8.img
+  register: raspberry_pi_kernel
+
+- name: Require installed Raspberry Pi 4K kernel
+  ansible.builtin.assert:
+    that: raspberry_pi_kernel.stat.exists
+    fail_msg: Install the Raspberry Pi kernel package providing kernel8.img before proceeding.
+
+- name: Install configuration normalizer
+  ansible.builtin.copy:
+    src: kernel_config.py
+    dest: /usr/local/libexec/pi5-rust/kernel_config.py
+    mode: '0755'
+
+- name: Select one unconditional 4K kernel directive
+  ansible.builtin.command:
+    argv: [python3, /usr/local/libexec/pi5-rust/kernel_config.py, /boot/firmware/config.txt]
+  register: raspberry_pi_config
+  changed_when: raspberry_pi_config.stdout == 'changed'
+
+- name: Read current page size
+  ansible.builtin.command: getconf PAGESIZE
+  register: raspberry_pi_pages
+  changed_when: false
+
+- name: Require permission for a necessary reboot
+  ansible.builtin.assert:
+    that: rust_allow_reboot | bool
+    fail_msg: Kernel is configured; reboot manually or set rust_allow_reboot=true and rerun.
+  when: raspberry_pi_pages.stdout != '4096'
+
+- name: Reboot into 4K kernel only when page size requires it
+  ansible.builtin.reboot:
+    reboot_timeout: 600
+  when: raspberry_pi_pages.stdout != '4096'
+
+- name: Verify page size after configuration
+  ansible.builtin.command: getconf PAGESIZE
+  register: raspberry_pi_verified
+  changed_when: false
+  failed_when: raspberry_pi_verified.stdout != '4096'

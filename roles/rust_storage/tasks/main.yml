@@ -1,0 +1,55 @@
+---
+- name: Install storage safety inspector
+  ansible.builtin.copy:
+    src: storage.py
+    dest: /usr/local/libexec/pi5-rust/storage.py
+    mode: '0755'
+
+- name: Inspect or explicitly initialize storage
+  ansible.builtin.command:
+    argv:
+      - python3
+      - /usr/local/libexec/pi5-rust/storage.py
+      - "{{ rust_storage_label }}"
+      - "{{ rust_storage_uuid }}"
+      - "{{ rust_storage_device }}"
+      - "{{ rust_storage_initialise | bool | ternary('yes', 'no') }}"
+  register: rust_storage_probe
+  changed_when: (rust_storage_probe.stdout | from_json).formatted
+
+- name: Save verified UUID
+  ansible.builtin.set_fact:
+    rust_storage_verified_uuid: "{{ (rust_storage_probe.stdout | from_json).uuid }}"
+
+- name: Mount persistent filesystem with one fstab entry
+  ansible.posix.mount:
+    path: /srv/rust
+    src: "UUID={{ rust_storage_verified_uuid }}"
+    fstype: ext4
+    opts: defaults,noatime
+    dump: '0'
+    passno: '2'
+    state: mounted
+
+- name: Verify mounted UUID
+  ansible.builtin.command: findmnt -n -o UUID --mountpoint /srv/rust
+  register: rust_storage_mount
+  changed_when: false
+  failed_when: rust_storage_mount.stdout != rust_storage_verified_uuid
+
+- name: Create stable Rust account
+  ansible.builtin.user:
+    name: rust
+    uid: "{{ rust_uid }}"
+    home: /srv/rust/home
+    create_home: false
+    shell: /usr/sbin/nologin
+
+- name: Create persistent layout
+  ansible.builtin.file:
+    path: "/srv/rust/{{ item }}"
+    state: directory
+    owner: rust
+    group: rust
+    mode: '0750'
+  loop: [home, steamcmd, server, data]

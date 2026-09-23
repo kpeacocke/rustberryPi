@@ -1,0 +1,23 @@
+---
+# Keep identity, seed and UID stable across microSD rebuilds.
+rust_identity: kp-pi5
+rust_hostname: "KP Pi 5 Rust PoC"
+rust_worldsize: 1500
+rust_seed: 12345
+rust_maxplayers: 4
+rust_uid: 2001
+rust_storage_label: RUSTSERVER
+# Prefer a UUID if more than one disk could carry this label.
+rust_storage_uuid: ""
+rust_storage_initialise: false
+rust_storage_device: ""  # Only an existing blank USB partition, never a whole disk.
+rust_allow_reboot: true
+rust_update: false  # Explicit maintenance run; never downloads updates on every converge.
+rust_start: true  # Set false for restore preparation.
+rust_manage_firewall: false  # Optional UFW; see README before enabling.
+rust_ssh_port: 22
+rust_client_cidr: "192.168.0.0/16"
+# This directory must be on a separately mounted NAS filesystem.
+rust_backup_destination: /mnt/nas/rust-backups
+rust_backup_mount: /mnt/nas
+rust_backup_schedule: ""  # e.g. '*-*-* 04:00:00'; empty disables the timer.

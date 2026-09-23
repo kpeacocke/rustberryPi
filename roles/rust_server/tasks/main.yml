@@ -1,0 +1,118 @@
+---
+- name: Validate tightly scoped configuration
+  ansible.builtin.assert:
+    that:
+      - rust_identity is match('^[a-zA-Z0-9_-]+$')
+      - rust_maxplayers | int == 4
+      - rust_worldsize | int >= 1000
+      - rust_worldsize | int <= 2000
+      - rust_seed | int >= 0
+      - rust_seed | int <= 2147483647
+      - rust_hostname is match('^[a-zA-Z0-9 ._-]+$')
+
+- name: Inspect existing identity directory
+  ansible.builtin.stat:
+    path: /srv/rust/server/server
+    follow: false
+  register: rust_server_state
+
+- name: Inspect existing deployment metadata
+  ansible.builtin.stat:
+    path: /srv/rust/data/deployment.json
+  register: rust_server_metadata
+
+- name: Protect existing world settings
+  when: rust_server_metadata.stat.exists
+  block:
+    - name: Read previous deployment metadata
+      ansible.builtin.slurp:
+        src: /srv/rust/data/deployment.json
+      register: rust_server_previous
+
+    - name: Require explicit opt-in to a different world or account
+      ansible.builtin.assert:
+        that:
+          - >-
+            rust_allow_world_change | default(false) | bool or
+            ((rust_server_previous.content | b64decode | from_json).identity == rust_identity and
+            (rust_server_previous.content | b64decode | from_json).seed | int == rust_seed | int and
+            (rust_server_previous.content | b64decode | from_json).worldsize | int == rust_worldsize | int and
+            (rust_server_previous.content | b64decode | from_json).uid | int == rust_uid | int)
+        fail_msg: World settings differ. Back up first; set rust_allow_world_change=true only for an intentional change.
+
+- name: Refuse to obscure an existing unmanaged state directory
+  ansible.builtin.assert:
+    that: >-
+      not rust_server_state.stat.exists or
+      (rust_server_state.stat.islnk | default(false) and
+      rust_server_state.stat.lnk_source == '/srv/rust/data')
+    fail_msg: Existing server/server is preserved. Follow the README state migration procedure before rerunning.
+
+- name: Link all Rust identities to persistent state
+  ansible.builtin.file:
+    src: /srv/rust/data
+    dest: /srv/rust/server/server
+    state: link
+    owner: rust
+    group: rust
+
+- name: Install maintenance and health utilities
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "/usr/local/libexec/pi5-rust/{{ item }}"
+    mode: '0755'
+  loop: [steam_manage.py, health.py, service_state.py]
+
+- name: Install or explicitly check for game updates
+  ansible.builtin.command:
+    argv:
+      - python3
+      - /usr/local/libexec/pi5-rust/steam_manage.py
+      - "{{ fex_rootfs_path }}"
+      - "{{ fex_prefix }}/bin/FEX"
+      - "{{ rust_storage_verified_uuid }}"
+      - "{{ rust_update | bool | ternary('update', 'install') }}"
+  register: rust_server_install
+  changed_when: "'updated' in rust_server_install.stdout"
+  notify: Restart Rust
+
+- name: Write persistent deployment metadata
+  ansible.builtin.copy:
+    content: >-
+      {{ {'identity': rust_identity, 'seed': rust_seed, 'worldsize': rust_worldsize,
+          'maxplayers': rust_maxplayers, 'uid': rust_uid, 'fex_commit': fex_commit,
+          'rootfs_sha256': fex_rootfs_sha256} | to_nice_json }}
+    dest: /srv/rust/data/deployment.json
+    owner: rust
+    group: rust
+    mode: '0640'
+
+- name: Configure dedicated service
+  ansible.builtin.template:
+    src: rust.service.j2
+    dest: /etc/systemd/system/rust.service
+    mode: '0644'
+  notify:
+    - Reload Rust units
+    - Restart Rust
+
+- name: Configure optional firewall
+  ansible.builtin.include_tasks: firewall.yml
+  when: rust_manage_firewall | bool
+
+- name: Flush necessary service restarts
+  ansible.builtin.meta: flush_handlers
+
+- name: Set requested boot enablement
+  ansible.builtin.systemd_service:
+    name: rust.service
+    enabled: "{{ rust_start | bool }}"
+
+- name: Set requested service state under the maintenance lock
+  ansible.builtin.command:
+    argv:
+      - python3
+      - /usr/local/libexec/pi5-rust/service_state.py
+      - "{{ rust_start | bool | ternary('start', 'stop') }}"
+  register: rust_server_service
+  changed_when: rust_server_service.stdout == 'changed'

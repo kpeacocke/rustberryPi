@@ -1,0 +1,10 @@
+[Unit]
+Description=Scheduled Rust NAS backup
+
+[Timer]
+OnCalendar={{ rust_backup_schedule | default('*-*-* 04:00:00', true) }}
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

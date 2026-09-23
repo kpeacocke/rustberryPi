@@ -1,0 +1,56 @@
+---
+- name: Require the supported operating system
+  ansible.builtin.assert:
+    that:
+      - ansible_facts['architecture'] == 'aarch64'
+      - ansible_facts['distribution'] == 'Debian'
+      - ansible_facts['distribution_major_version'] == '13'
+    fail_msg: This project targets Raspberry Pi 5 with Debian 13 arm64.
+
+- name: Read board model
+  ansible.builtin.slurp:
+    src: /proc/device-tree/model
+  register: prerequisites_model
+
+- name: Require Raspberry Pi 5
+  ansible.builtin.assert:
+    that: "'Raspberry Pi 5' in (prerequisites_model.content | b64decode)"
+
+- name: Install build and runtime prerequisites
+  ansible.builtin.apt:
+    name:
+      - build-essential
+      - clang
+      - llvm
+      - lld
+      - cmake
+      - ninja-build
+      - git
+      - pkg-config
+      - libssl-dev
+      - libcurl4-openssl-dev
+      - libepoxy-dev
+      - libvulkan-dev
+      - libx11-dev
+      - libxext-dev
+      - libxrender-dev
+      - libjemalloc-dev
+      - qtbase5-dev
+      - qtdeclarative5-dev
+      - squashfs-tools
+      - python3
+      - python3-apt
+      - acl
+      - ca-certificates
+      - rsync
+      - e2fsprogs
+      - util-linux
+    state: present
+    update_cache: true
+    cache_valid_time: 86400
+
+- name: Create managed helper directory
+  ansible.builtin.file:
+    path: /usr/local/libexec/pi5-rust
+    state: directory
+    mode: '0755'
