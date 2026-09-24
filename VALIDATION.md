@@ -25,3 +25,12 @@ No SSH deployment was performed. FEX compilation on Debian/Pi, actual SteamCMD
 and Rust execution, full-play zero-change convergence, thermal/performance behavior,
 reboot recovery and real NAS backup/restore remain hardware acceptance tests.
 The README gives the procedure; these must not be inferred from static checks.
+
+## Mount collection compatibility fix — 2026-09-25
+
+Updated `ansible.posix` from 2.1.0 to 2.2.2. The released mount module uses
+`ansible.module_utils.common.text.converters` and `module.warn`, replacing the
+deprecated text imports and `warnings` result field. Exercised `state: mounted`
+in check mode against a disposable fstab under ansible-core 2.20.1: passed without
+the reported deprecation warnings. No actual filesystem was mounted or formatted.
+The deployment playbook syntax check also passed. Deprecation warnings remain enabled.
