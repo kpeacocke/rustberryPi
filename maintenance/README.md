@@ -49,6 +49,51 @@ stored in this repository, and no external messages are sent by these playbooks.
 
 ## Run one or all
 
+### Optional managed SMB backup storage
+
+Create a dedicated NAS share and non-admin account with write access only to that
+share. On the Pi, create a credentials file outside the repository:
+
+```sh
+sudo install -d -o root -g root -m 0700 /etc/rustberrypi-nas
+sudo touch /etc/rustberrypi-nas/credentials
+sudo chown root:root /etc/rustberrypi-nas/credentials
+sudo chmod 0600 /etc/rustberrypi-nas/credentials
+sudo nano /etc/rustberrypi-nas/credentials
+```
+
+Its contents are `username=YOUR_BACKUP_ACCOUNT` and `password=YOUR_PASSWORD`, on
+separate lines without quotes. Never paste these credentials into chat, command
+arguments or tracked files. Recreate this file after reimaging the OS, or provision
+it privately through Ansible Vault/AWX; this role deliberately does not read it
+back into controller output.
+
+In ignored private host variables, configure:
+
+```yaml
+rust_nas_enabled: true
+rust_nas_server: nas.example.invalid
+rust_nas_share: rust-backups
+rust_backup_mount: /mnt/nas
+rust_backup_destination: /mnt/nas/rust-backups
+```
+
+Run `playbooks/nas.yml` using your normal inventory/connection options to install
+SMB support, mount the share persistently and check write/read access. This does
+not stop Rust or take a backup. The same optional role runs before future
+maintenance and during normal convergence. It refuses unrelated existing mounts,
+nonempty underlying directories and credentials not owned by root with mode 0600.
+The mount uses SMB3, root-only file permissions, no execution/device/setuid support,
+and systemd automount with nofail so an offline NAS does not prevent OS boot.
+Maintenance still refuses to proceed if the NAS is unavailable.
+
+The share itself is mounted at `/mnt/nas`; archives go into its `rust-backups`
+subdirectory. If the NAS firewall is enabled, allow SMB TCP 445 from the Pi.
+Changing `rust_nas_enabled` to false stops management; it does not remove the
+existing mount/fstab entry or backups.
+
+### Launch the selected job
+
 From an SSH controller with the existing private inventory and become credentials:
 
 ```sh

@@ -4,4 +4,6 @@
   become: true
   serial: 1
   roles:
+    - role: rust_nas
+      when: rust_nas_enabled | default(false) | bool
     - rust_maintenance

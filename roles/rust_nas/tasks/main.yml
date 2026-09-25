@@ -1,0 +1,101 @@
+---
+- name: Validate private SMB configuration
+  ansible.builtin.assert:
+    that:
+      - rust_nas_server is match('^[A-Za-z0-9][A-Za-z0-9.-]*$')
+      - rust_nas_share is match('^[A-Za-z0-9_-]+$')
+      - rust_nas_credentials is match('^/etc/[A-Za-z0-9_./-]+$')
+      - "'..' not in rust_nas_credentials.split('/')"
+      - rust_backup_mount is match('^/mnt/[A-Za-z0-9_-]+$')
+    fail_msg: Configure rust_nas_server, rust_nas_share and an existing root-only credentials file.
+
+- name: Inspect credentials without reading their contents
+  ansible.builtin.stat:
+    path: '{{ rust_nas_credentials }}'
+    follow: false
+  register: rust_nas_secret
+
+- name: Require private root-owned SMB credentials
+  ansible.builtin.assert:
+    that:
+      - rust_nas_secret.stat.exists
+      - rust_nas_secret.stat.isreg | default(false)
+      - rust_nas_secret.stat.uid | default(-1) == 0
+      - rust_nas_secret.stat.mode | default('') == '0600'
+    fail_msg: Create the SMB credentials file on the Pi, owned by root with mode 0600; see maintenance/README.md.
+
+- name: Install SMB mount support
+  ansible.builtin.apt:
+    name: cifs-utils
+    state: present
+    update_cache: true
+    cache_valid_time: 86400
+
+- name: Inspect an existing mount before changing it
+  ansible.builtin.command:
+    argv: [findmnt, -n, -o, 'SOURCE,FSTYPE', --mountpoint, '{{ rust_backup_mount }}']
+  register: rust_nas_existing
+  changed_when: false
+  failed_when: rust_nas_existing.rc not in [0, 1]
+
+- name: Preserve any unrelated filesystem mounted at the destination
+  ansible.builtin.assert:
+    that: >-
+      rust_nas_existing.rc == 1 or
+      (rust_nas_existing.stdout_lines | map('trim') | map('regex_replace', '\\s+', ' ') |
+       difference(['//' + rust_nas_server + '/' + rust_nas_share + ' cifs', 'systemd-1 autofs']) | length == 0)
+    fail_msg: Another filesystem occupies the NAS mountpoint; resolve it manually before proceeding.
+
+- name: Refuse to hide files beneath a new NAS mount
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - -c
+      - >-
+        from pathlib import Path;
+        p=Path('{{ rust_backup_mount }}');
+        assert not p.is_symlink();
+        assert not p.exists() or (p.is_dir() and not any(p.iterdir()))
+  changed_when: false
+  when: rust_nas_existing.rc == 1
+
+- name: Create unmounted NAS mountpoint
+  ansible.builtin.file:
+    path: '{{ rust_backup_mount }}'
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+  when: rust_nas_existing.rc == 1
+
+- name: Persist and mount the dedicated SMB share
+  ansible.posix.mount:
+    path: '{{ rust_backup_mount }}'
+    src: '//{{ rust_nas_server }}/{{ rust_nas_share }}'
+    fstype: cifs
+    opts: >-
+      {{ ['credentials=' + rust_nas_credentials, 'vers=3.0', 'uid=0', 'gid=0', 'file_mode=0600',
+          'dir_mode=0700', 'nosuid', 'nodev', 'noexec', '_netdev', 'nofail',
+          'x-systemd.automount', 'x-systemd.mount-timeout=30s'] | join(',') }}
+    state: mounted
+  register: rust_nas_mount
+
+- name: Reload systemd after mount configuration changes
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  when: rust_nas_mount.changed # noqa: no-handler -- Apply fstab changes before validating storage.
+
+- name: Check NAS read and write access without leaving a test file
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - -c
+      - >-
+        import os,tempfile;
+        from pathlib import Path;
+        p=Path('{{ rust_backup_mount }}');
+        assert os.stat(p).st_dev not in (os.stat('/').st_dev,os.stat('/srv/rust').st_dev);
+        f=tempfile.TemporaryFile(dir=p);
+        f.write(b'rustberryPi backup storage check'); f.flush(); os.fsync(f.fileno());
+        f.seek(0); assert f.read()==b'rustberryPi backup storage check'; f.close()
+  changed_when: false
