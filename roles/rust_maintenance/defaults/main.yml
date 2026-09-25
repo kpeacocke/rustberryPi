@@ -1,0 +1,7 @@
+---
+rust_maintenance_target: rust
+rust_maintenance_warning_seconds: 600
+rust_maintenance_os_reboot: true
+rust_maintenance_fex_commit: ''
+rust_maintenance_fex_version: ''
+rust_maintenance_health_timeout: 1800

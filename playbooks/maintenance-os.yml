@@ -1,0 +1,5 @@
+---
+- name: Run standalone os maintenance
+  ansible.builtin.import_playbook: maintenance.yml
+  vars:
+    rust_maintenance_target: os

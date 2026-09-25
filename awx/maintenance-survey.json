@@ -1,0 +1,47 @@
+{
+  "name": "RustberryPi maintenance",
+  "description": "Select one job or all jobs for a shared maintenance window. Requires a mounted NAS backup destination.",
+  "spec": [
+    {
+      "question_name": "What should be maintained?",
+      "question_description": "All runs OS, pinned FEX, then Rust with one countdown and backup.",
+      "required": true,
+      "type": "multiplechoice",
+      "variable": "rust_maintenance_target",
+      "choices": "rust\nos\nfex\nall",
+      "default": "rust",
+      "min": 0,
+      "max": 1024
+    },
+    {
+      "question_name": "Warning countdown in seconds",
+      "question_description": "600 gives ten minutes. Zero still announces immediately before saving and stopping.",
+      "required": true,
+      "type": "integer",
+      "variable": "rust_maintenance_warning_seconds",
+      "default": 600,
+      "min": 0,
+      "max": 3600
+    },
+    {
+      "question_name": "FEX commit (required for fex or all)",
+      "question_description": "Exact 40-character commit, reviewed before launch; never automatic latest.",
+      "required": false,
+      "type": "text",
+      "variable": "rust_maintenance_fex_commit",
+      "default": "",
+      "min": 0,
+      "max": 40
+    },
+    {
+      "question_name": "FEX version (required for fex or all)",
+      "question_description": "Version label matching the selected commit. Also persist both desired pins in private host vars.",
+      "required": false,
+      "type": "text",
+      "variable": "rust_maintenance_fex_version",
+      "default": "",
+      "min": 0,
+      "max": 100
+    }
+  ]
+}

@@ -1,0 +1,265 @@
+---
+- name: Validate requested maintenance window
+  ansible.builtin.assert:
+    that:
+      - not ansible_check_mode
+      - rust_maintenance_target in ['os', 'fex', 'rust', 'all']
+      - rust_maintenance_warning_seconds | int >= 0
+      - rust_maintenance_warning_seconds | int <= 3600
+      - rust_maintenance_health_timeout | int >= 60
+      - ansible_facts['distribution'] == 'Debian'
+      - >-
+        rust_maintenance_target not in ['os', 'all'] or not rust_maintenance_os_reboot | bool
+        or ansible_connection | default('ssh') != 'local'
+      - >-
+        rust_maintenance_target not in ['fex', 'all'] or
+        (rust_maintenance_fex_commit is match('^[a-f0-9]{40}$') and
+        rust_maintenance_fex_version is match('^[A-Za-z0-9._-]+$'))
+    fail_msg: >-
+      Choose os, fex, rust or all. FEX requires an explicit commit and version.
+      Rebooting OS jobs require an SSH controller; local jobs must set rust_maintenance_os_reboot=false.
+
+- name: Install maintenance control utility
+  ansible.builtin.copy:
+    src: '{{ playbook_dir }}/../maintenance/control.py'
+    dest: /usr/local/libexec/pi5-rust/maintenance.py
+    owner: root
+    group: root
+    mode: '0750'
+
+- name: Inspect existing managed installation
+  ansible.builtin.command: /usr/bin/python3 /usr/local/libexec/pi5-rust/maintenance.py inspect
+  register: rust_maintenance_inspection
+  changed_when: false
+
+- name: Remember deployed runtime rather than changing unrelated pins
+  ansible.builtin.set_fact:
+    rust_maintenance_runtime: '{{ rust_maintenance_inspection.stdout | from_json }}'
+
+- name: Verify NAS is mounted before announcing downtime
+  ansible.builtin.command:
+    argv: [mountpoint, -q, '{{ rust_backup_mount }}']
+  changed_when: false
+
+- name: Require a running game before a scheduled maintenance window # noqa: command-instead-of-module -- Read-only state check.
+  ansible.builtin.command: systemctl is-active --quiet rust.service
+  changed_when: false
+
+- name: Record initial service and timer states
+  ansible.builtin.command:
+    argv: [systemctl, show, '{{ item }}', '--property=ActiveState', --value]
+  loop: [rust-backup.timer, rust-maintenance-check.timer, rust-telemetry.service]
+  register: rust_maintenance_initial_units
+  changed_when: false
+  failed_when: false
+
+- name: Acquire exclusive maintenance window
+  ansible.builtin.command: mkdir -m 0700 /var/lib/rustberrypi-maintenance
+  changed_when: true
+  # Atomic acquisition intentionally fails if another or interrupted job owns it.
+
+- name: Execute selected jobs inside one maintenance window
+  block:
+    - name: Create service guard directories
+      ansible.builtin.file:
+        path: '/etc/systemd/system/{{ item }}.d'
+        state: directory
+        mode: '0755'
+      loop: [rust.service, rust-backup.service, rust-maintenance-check.service]
+
+    - name: Prevent unattended starts during offline work including after reboot
+      ansible.builtin.copy:
+        content: |
+          [Unit]
+          ConditionPathExists=!/var/lib/rustberrypi-maintenance/offline
+        dest: '/etc/systemd/system/{{ item }}.d/maintenance-guard.conf'
+        mode: '0644'
+      loop: [rust.service, rust-backup.service, rust-maintenance-check.service]
+
+    - name: Pause scheduled jobs and collector while maintenance owns RCON
+      ansible.builtin.systemd_service:
+        name: '{{ item.item }}'
+        state: stopped
+        daemon_reload: true
+      loop: '{{ rust_maintenance_initial_units.results }}'
+      loop_control:
+        label: '{{ item.item }}'
+      when: item.rc == 0
+
+    - name: Wait for already running scheduled operations
+      ansible.builtin.command:
+        argv: [systemctl, show, '{{ item }}', '--property=ActiveState', --value]
+      register: rust_maintenance_background
+      changed_when: false
+      until: rust_maintenance_background.stdout in ['inactive', 'failed']
+      retries: 120
+      delay: 10
+      loop: [rust-backup.service, rust-maintenance-check.service]
+
+    - name: Allow a quiet RCON interval before announcing maintenance
+      ansible.builtin.pause:
+        seconds: 60
+
+    - name: Announce countdown and request world save
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - /usr/local/libexec/pi5-rust/maintenance.py
+          - announce
+          - --seconds
+          - '{{ rust_maintenance_warning_seconds | int }}'
+          - --jobs
+          - '{{ rust_maintenance_target }}'
+      async: 3700
+      poll: 10
+      changed_when: true
+
+    - name: Mark offline phase persistently
+      ansible.builtin.copy:
+        content: 'Maintenance in progress; see maintenance/README.md for interrupted-job recovery.'
+        dest: /var/lib/rustberrypi-maintenance/offline
+        mode: '0600'
+
+    - name: Stop Rust gracefully under the existing lifecycle lock
+      ansible.builtin.command:
+        argv: [python3, /usr/local/libexec/pi5-rust/service_state.py, stop]
+      changed_when: true
+
+    - name: Require clean shutdown before changing files # noqa: command-instead-of-module -- Read-only Result check.
+      ansible.builtin.command: systemctl show rust.service --property=Result --value
+      register: rust_maintenance_shutdown
+      changed_when: false
+      failed_when: rust_maintenance_shutdown.stdout != 'success'
+
+    - name: Create consistent NAS archive with existing backup safeguards
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - /usr/local/libexec/pi5-rust/backup.py
+          - backup
+          - --mount
+          - '{{ rust_backup_mount }}'
+          - --destination
+          - '{{ rust_backup_destination }}'
+      register: rust_maintenance_backup
+      async: 3600
+      poll: 10
+      changed_when: true
+
+    - name: Verify new archive checksum and read all archived files
+      ansible.builtin.command:
+        argv: [/usr/bin/python3, /usr/local/libexec/pi5-rust/maintenance.py, verify-backup,
+               --archive, '{{ rust_maintenance_backup.stdout | trim }}']
+      changed_when: false
+
+    - name: Run OS job
+      ansible.builtin.include_tasks: os.yml
+      when: rust_maintenance_target in ['os', 'all']
+
+    - name: Run pinned FEX job
+      ansible.builtin.include_tasks: fex.yml
+      when: rust_maintenance_target in ['fex', 'all']
+
+    - name: Run Rust job
+      ansible.builtin.include_tasks: rust.yml
+      when: rust_maintenance_target in ['rust', 'all']
+
+    - name: Require 4 KB kernel pages after maintenance
+      ansible.builtin.command: getconf PAGESIZE
+      register: rust_maintenance_pages
+      changed_when: false
+      failed_when: rust_maintenance_pages.stdout | trim != '4096'
+
+    - name: Allow controlled startup for health checks
+      ansible.builtin.file:
+        path: /var/lib/rustberrypi-maintenance/offline
+        state: absent
+
+    - name: Start Rust under lifecycle lock
+      ansible.builtin.command:
+        argv: [python3, /usr/local/libexec/pi5-rust/service_state.py, start]
+      changed_when: true
+
+    - name: Verify game-query readiness
+      ansible.builtin.command:
+        argv: [python3, /usr/local/libexec/pi5-rust/health.py, '{{ rust_maintenance_health_timeout | int }}']
+      async: '{{ rust_maintenance_health_timeout | int + 30 }}'
+      poll: 10
+      changed_when: false
+      no_log: true  # Existing health helper includes raw game logs on failure.
+
+    - name: Resume collector for authenticated readiness check
+      ansible.builtin.systemd_service:
+        name: rust-telemetry.service
+        state: started
+
+    - name: Wait for fresh RCON data
+      ansible.builtin.uri:
+        url: 'http://127.0.0.1:{{ rust_maintenance_runtime.telemetry_port }}/api/status'
+        return_content: true
+      register: rust_maintenance_health
+      until: >-
+        rust_maintenance_health.status | default(0) == 200 and
+        rust_maintenance_health.json.rcon_at | default(0) > rust_maintenance_health.json.sampled_at | default(0) - 30 and
+        rust_maintenance_health.json.rcon_at | default(0) > 0 and
+        not rust_maintenance_health.json.rcon_error | default(true)
+      retries: 120
+      delay: 5
+      no_log: true  # Player names are not published in AWX output.
+
+    - name: Report verified completion
+      ansible.builtin.debug:
+        msg: >-
+          Maintenance {{ rust_maintenance_target }} complete; game query and authenticated RCON are healthy.
+          Backup {{ rust_maintenance_backup.stdout | trim }}.
+
+    - name: Release completed maintenance window
+      ansible.builtin.file:
+        path: /var/lib/rustberrypi-maintenance
+        state: absent
+
+  rescue:
+    - name: Record whether offline work began
+      ansible.builtin.stat:
+        path: /var/lib/rustberrypi-maintenance/offline
+      register: rust_maintenance_offline_marker
+
+    - name: Guard failed update or failed startup from automatic restart
+      when: rust_maintenance_backup is defined or rust_maintenance_offline_marker.stat.exists
+      block:
+        - name: Retain persistent startup guard
+          ansible.builtin.copy:
+            content: 'Maintenance failed; inspect job output and follow documented recovery.'
+            dest: /var/lib/rustberrypi-maintenance/offline
+            mode: '0600'
+        - name: Leave failed deployment stopped
+          ansible.builtin.systemd_service:
+            name: rust.service
+            state: stopped
+
+    - name: Release window if failure happened before offline work
+      ansible.builtin.file:
+        path: /var/lib/rustberrypi-maintenance
+        state: absent
+      when:
+        - rust_maintenance_backup is not defined
+        - not rust_maintenance_offline_marker.stat.exists
+
+    - name: Report failure without implying rollback or success
+      ansible.builtin.fail:
+        msg: >-
+          Maintenance failed at {{ ansible_failed_task.name }}. No automatic rollback was attempted.
+          If offline work began, Rust remains stopped with a persistent startup guard.
+          Follow maintenance/README.md; preserve the new NAS backup and job output.
+
+  always:
+    - name: Restore previously running timers and collector
+      ansible.builtin.systemd_service:
+        name: '{{ item.item }}'
+        state: started
+      loop: '{{ rust_maintenance_initial_units.results }}'
+      loop_control:
+        label: '{{ item.item }}'
+      when:
+        - item.rc == 0
+        - item.stdout == 'active'

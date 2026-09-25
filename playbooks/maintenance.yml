@@ -1,0 +1,7 @@
+---
+- name: Run one or all RustberryPi maintenance jobs
+  hosts: rust_servers
+  become: true
+  serial: 1
+  roles:
+    - rust_maintenance

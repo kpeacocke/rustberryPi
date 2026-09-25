@@ -1,0 +1,5 @@
+---
+- name: Run all maintenance jobs in one window
+  ansible.builtin.import_playbook: maintenance.yml
+  vars:
+    rust_maintenance_target: all

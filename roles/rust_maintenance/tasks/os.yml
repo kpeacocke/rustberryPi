@@ -1,0 +1,26 @@
+---
+- name: Upgrade Debian packages without a distribution release change
+  ansible.builtin.apt:
+    update_cache: true
+    upgrade: dist
+    policy_rc_d: 101
+    lock_timeout: 120
+
+- name: Reboot through SSH while the game startup guard is present
+  ansible.builtin.reboot:
+    reboot_timeout: 900
+  when: rust_maintenance_os_reboot | bool
+
+- name: Report deferred OS reboot
+  ansible.builtin.debug:
+    msg: OS packages upgraded; reboot was explicitly deferred. Schedule a reboot to activate kernel and library changes.
+  when: not rust_maintenance_os_reboot | bool
+
+- name: Pause timers and collector again after boot activation
+  ansible.builtin.systemd_service:
+    name: '{{ item.item }}'
+    state: stopped
+  loop: '{{ rust_maintenance_initial_units.results }}'
+  loop_control:
+    label: '{{ item.item }}'
+  when: item.rc == 0

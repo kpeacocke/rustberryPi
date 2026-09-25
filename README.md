@@ -5,6 +5,11 @@ Trixie arm64, 4 KB Raspberry Pi kernel, FEX and a vanilla four-player Rust serve
 The OS lives on microSD; the ext4 USB labelled `RUSTSERVER` holds `/srv/rust`.
 No plugins, containers, game-server framework or scheduled game updates.
 
+For announced update windows, see [maintenance jobs and workflows](maintenance/README.md).
+Separate OS, FEX and Rust jobs can run individually or together with one countdown,
+verified NAS backup and final game/RCON health checks. The selectable workflow also
+includes an AWX survey; FEX upgrades require an explicit pin.
+
 **The core PoC has been demonstrated on a Raspberry Pi 5:** deployment and readiness passed,
 an unchanged second run reported zero changes, and a player joined successfully.
 Startup after reboot also succeeded; the supplied log reported 216.30 seconds for
