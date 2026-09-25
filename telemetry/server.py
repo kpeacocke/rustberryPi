@@ -4,6 +4,7 @@ import argparse
 from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
+import logging
 from pathlib import Path
 import socket
 import subprocess
@@ -122,6 +123,7 @@ class Collector:
         self.last_rcon = 0
         self.game = {}
         self.previous_io = None
+        self.rcon_error = None
 
     def collect(self):
         now = time.time()
@@ -168,11 +170,16 @@ class Collector:
                         self.events.appendleft({'at': now, 'text': (name if self.config['show_names'] else 'A player') + ' ' + action})
             self.previous_ids = current_ids
             self.last_rcon = now
+            self.rcon_error = None
             self.game = {'players': public_players(rows, self.config['show_names']),
                          'fps': info.get('Framerate'), 'entities': info.get('EntityCount'),
                          'uptime_seconds': info.get('Uptime'), 'world_size': info.get('WorldSize')}
-        except Exception:
+        except Exception as error:
             # Do not log errors containing the RCON URL/password or player addresses.
+            category = type(error).__name__
+            if category != self.rcon_error:
+                logging.warning('Local RCON unavailable (%s)', category)
+            self.rcon_error = category
             self.previous_ids = None
         maintenance = {}
         try:
@@ -193,7 +200,7 @@ class Collector:
             companion = sock.connect_ex(('127.0.0.1', self.config['companion_port'])) == 0
         self.history.append({'at': now, 'cpu': sum(host['cpu']) / max(1, len(host['cpu'])),
                              'memory': memory.percent, 'temperature': host['temperature'], 'fps': self.game.get('fps') if self.last_rcon == now else None})
-        data = {'sampled_at': now, 'rcon_at': self.last_rcon, 'game': self.game, 'host': host,
+        data = {'sampled_at': now, 'rcon_at': self.last_rcon, 'rcon_error': self.rcon_error, 'game': self.game, 'host': host,
                 'game_query_ready': a2s_ready(),
                 'service': service, 'maintenance': maintenance, 'companion_listener': companion,
                 'events': list(self.events), 'history': list(self.history)}

@@ -210,3 +210,19 @@
   retries: 10
   delay: 2
   until: rust_telemetry_http.status == 200
+
+- name: Verify authenticated Rust telemetry after startup
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - -c
+      - >-
+        import json,urllib.request,sys,time;
+        d=json.load(urllib.request.urlopen('http://127.0.0.1:{{ rust_telemetry_port }}/api/status',timeout=5));
+        sys.exit(0 if d.get('rcon_at',0)>time.time()-30 and not d.get('rcon_error') else 1)
+  register: rust_telemetry_ready
+  changed_when: false
+  retries: 120
+  delay: 5
+  until: rust_telemetry_ready.rc == 0
+  when: rust_start | bool

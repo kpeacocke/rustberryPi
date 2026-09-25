@@ -66,6 +66,15 @@
     mode: '0755'
   loop: [steam_manage.py, health.py, service_state.py, access.py]
 
+- name: Install managed startup helper
+  ansible.builtin.copy:
+    src: launch.py
+    dest: /usr/local/libexec/pi5-rust/launch.py
+    owner: root
+    group: root
+    mode: '0755'
+  notify: Restart Rust
+
 - name: Install or explicitly check for game updates
   ansible.builtin.command:
     argv:

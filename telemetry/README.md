@@ -23,6 +23,11 @@ absence does not prove that no reboot is necessary.
 
 Use your existing private inventory, identity and pins. On the Pi:
 
+When upgrading from an older dashboard installation, first run the full
+`playbooks/rust.yml` with `rust_telemetry_enabled=true` to install the managed
+startup helper. This fixes a missing local RCON listener by passing its settings
+before Rust initializes networking. It causes one restart on an existing setup.
+
 ```sh
 ansible-playbook playbooks/telemetry.yml --connection local --ask-become-pass \
   -e ansible_python_interpreter=/usr/bin/python3
@@ -36,6 +41,14 @@ and the persistent `server.cfg`; treat both and NAS archives as sensitive. On a
 microSD rebuild a new credential is generated and both sides are updated together.
 Existing RCON clients would need the new credential. No router or UFW rule is added.
 Review any pre-existing custom RCON settings before deploying.
+
+The startup helper reads only the managed telemetry block and passes its password,
+WebSocket mode and loopback binding as Rust startup arguments. The password is not
+embedded in the public systemd unit or Ansible output, but can be visible in local
+process arguments and game startup diagnostics. Treat process listings and raw
+Rust journals as sensitive; redact before sharing. The collector logs exception
+types only, never credential-bearing RCON URLs. Deployment now waits for a fresh
+authenticated RCON sample, not just a successful dashboard HTTP response.
 
 The standalone play assumes FEX at `/usr/bin/FEX` and the project's default RootFS.
 If yours differs, set `rust_telemetry_fex`, `rust_telemetry_rootfs`, and
