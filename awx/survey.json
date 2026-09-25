@@ -24,6 +24,17 @@
       "min": 0,
       "max": 4096,
       "new_question": true
+    },
+    {
+      "question_name": "Who may administer the game?",
+      "question_description": "Full Rust owner/admin rights. Enter numeric Steam IDs, separated by commas or lines. Restricted-mode admins must also be approved players. preserve retains current admins; blank revokes all game admins.",
+      "required": false,
+      "type": "textarea",
+      "variable": "rust_admin_players",
+      "default": "preserve",
+      "min": 0,
+      "max": 4096,
+      "new_question": true
     }
   ]
 }

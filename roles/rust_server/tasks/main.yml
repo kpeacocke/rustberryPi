@@ -82,7 +82,10 @@
 - name: Validate and reconcile player access under the maintenance lock
   ansible.builtin.command:
     argv: [python3, /usr/local/libexec/pi5-rust/access.py, "{{ rust_identity }}"]
-    stdin: "{{ {'mode': rust_access_mode | default('preserve'), 'players': rust_allowed_players | default('')} | to_json }}"
+    stdin: >-
+      {{ {'mode': rust_access_mode | default('preserve'),
+          'players': rust_allowed_players | default(''),
+          'admins': rust_admin_players | default('preserve')} | to_json }}
   register: rust_server_access
   changed_when: (rust_server_access.stdout | from_json).changed
   no_log: true

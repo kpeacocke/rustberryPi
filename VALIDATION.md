@@ -128,3 +128,10 @@ before writing and did not stop it on the unchanged second application.
 The AWX survey JSON was parsed locally but has not been imported into a live AWX
 instance. Actual approved/unapproved player joins remain a live Pi acceptance
 check; unit tests do not establish game admission behaviour.
+
+## Administrator survey update
+
+All 53 helper tests passed, including admin grants, owner/moderator revocation,
+ban preservation, unchanged-run idempotence, persistence across unattended runs,
+and rejection of administrators outside the restricted player list. Live game
+administrator authorization still requires deployment and a reconnect on the Pi.

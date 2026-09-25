@@ -498,7 +498,7 @@ use `playbooks/rust.yml`, supplying the same variables through inventory or surv
 `awx/survey.json` is a ready survey specification for a job template using
 `playbooks/rust.yml`. In the AWX API, POST that JSON to
 `/api/v2/job_templates/<template-id>/survey_spec/`, then PATCH the job template with
-`{"survey_enabled": true}`. Alternatively recreate its two questions in the Survey
+`{"survey_enabled": true}`. Alternatively recreate its three questions in the Survey
 editor. Use your existing authenticated AWX session or API tooling; no controller
 URL or token is stored here. No AWX instance has been configured by this repository.
 
@@ -512,9 +512,9 @@ survey IDs are operational data, not secret credentials, and may appear in AWX.
 
 This uses Facepunch's documented vanilla method: `server.maxplayers=0` plus
 `skipqueueid` entries in the persistent identity's `cfg/users.cfg`. The approved
-list is limited to four, replacing the ordinary four-slot limit. No admin rights
-are granted. Existing owners/moderators outside that list cause a failure for
-explicit review because admins can bypass the queue; existing bans are preserved.
+list is limited to four, replacing the ordinary four-slot limit. Join permission alone grants no admin rights. When administrator management is
+left at `preserve`, existing owners/moderators outside the approved list cause a
+failure for explicit review because admins bypass the queue. Bans are preserved.
 Unknown users.cfg commands and conflicting server.cfg capacity settings also fail
 for review. The approved list replaces all skipqueue entries, so removing an ID
 revokes its queue access. A pre-management users.cfg copy is retained privately.
@@ -535,3 +535,23 @@ rejection. A2S readiness only proves the server responds, not admission enforcem
 The server can still be discoverable; this restricts joining, not listing or packet
 exposure. The native method is documented at:
 https://wiki.facepunch.com/rust/Creating_a_hidden_whitelisted_server
+
+### Game administrator question
+
+The CLI wrapper and AWX survey also ask who may administer Rust. Set
+`rust_admin_players` to numeric SteamID64 values (YAML list or comma/newline text).
+These users receive full Rust `ownerid` rights, not Linux/SSH/sudo permissions.
+In restricted mode each administrator must also appear in `rust_allowed_players`.
+
+An explicit list is authoritative: it replaces all existing owner/moderator entries
+with the selected owners. Blank text or `[]` removes all game administrators.
+The literal `preserve` (the noninteractive default and AWX question default) retains
+the persisted managed admin list, or preserves existing entries on older deployments
+that have never managed admins. Ordinary unattended runs therefore retain the
+selected admins. Removing a player who is still a managed admin fails until the
+admin list is also updated.
+
+Enter only your own SteamID64 to make yourself the sole admin. Keep this setting
+in ignored private host vars or AWX; public examples never contain real IDs.
+Changing administrator rights triggers the same graceful stop/restart as player
+access changes. Reconnect after deployment to refresh your game authorization.

@@ -21,9 +21,17 @@
         - rust_allowed_players | default('') | length == 0
       no_log: true
 
+    - name: Ask who may administer the game
+      ansible.builtin.pause:
+        prompt: "Admin SteamID64 values (comma-separated); blank removes all game admins; preserve keeps current admins"
+      register: rust_survey_admins
+      when: rust_admin_players is not defined
+      no_log: true
+
     - name: Retain answers for the convergence play
       ansible.builtin.set_fact:
         rust_access_mode: "{{ rust_access_mode }}"
+        rust_admin_players: "{{ rust_survey_admins.user_input | default(rust_admin_players | default('preserve')) }}"
         rust_allowed_players: "{{ rust_survey_players.user_input | default(rust_allowed_players | default('')) }}"
       no_log: true
 

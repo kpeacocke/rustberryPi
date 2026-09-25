@@ -15,6 +15,29 @@ B = '76561198000000002'
 
 
 class AccessTests(unittest.TestCase):
+    def test_admin_must_be_approved(self):
+        with self.assertRaises(ValueError):
+            access.policy({'mode': 'restricted', 'players': [A], 'admins': [B]}, None)
+
+    def test_admin_assignment_and_revocation(self):
+        desired = access.policy({'mode': 'restricted', 'players': [A, B], 'admins': [A]}, None)
+        original = f'moderatorid {B} "old" ""\nbanid {B} "banned" "reason"\n'
+        result = access.reconcile(original, desired)
+        self.assertIn(f'ownerid {A}', result)
+        self.assertNotIn(f'moderatorid {B}', result)
+        self.assertIn(f'banid {B}', result)
+        self.assertEqual(access.reconcile(result, desired), result)
+        cleared = access.policy({'admins': ''}, desired)
+        self.assertNotIn('ownerid', access.reconcile(result, cleared))
+
+    def test_unattended_preserves_managed_admins(self):
+        previous = {'mode': 'restricted', 'players': [A], 'admins': [A]}
+        self.assertEqual(access.policy({}, previous), previous)
+
+    def test_admin_invalid_input_rejected(self):
+        with self.assertRaises(ValueError):
+            access.policy({'admins': 'not-a-steam-id'}, None)
+
     def test_restricted_requires_ids(self):
         for invalid in ('', 'not-an-id', 'https://steamcommunity.com/id/example', A + ';quit'):
             with self.assertRaises(ValueError):
