@@ -34,3 +34,17 @@ deprecated text imports and `warnings` result field. Exercised `state: mounted`
 in check mode against a disposable fstab under ansible-core 2.20.1: passed without
 the reported deprecation warnings. No actual filesystem was mounted or formatted.
 The deployment playbook syntax check also passed. Deprecation warnings remain enabled.
+
+## First Pi deployment follow-up — 2026-09-25
+
+User-provided output confirms the kernel/storage checks, pinned FEX build and
+execution smoke test, RootFS extraction and Steam Rust installation completed on
+the Pi. A2S readiness subsequently timed out. The cause of that runtime failure
+is not established by the Ansible output alone.
+
+Prepared the Rust account's private Ansible temporary directories and configured
+Steam library symlink ownership without following its initially absent target.
+Readiness now checks systemd state, fails early on a stopped/crashing service, and
+includes status/journal diagnostics. All four syntax checks and 32 helper tests
+passed locally, including five new health failure/diagnostic cases. These changes
+do not by themselves establish that Rust can start on the Pi.

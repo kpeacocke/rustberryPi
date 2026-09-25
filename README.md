@@ -197,6 +197,10 @@ The systemd unit restarts on failure with rate limits. Configuration changes tri
 restart; ordinary convergence does not. First map generation under emulation may
 be slow: readiness waits up to 30 minutes for a real A2S_INFO UDP response, including
 Steam's challenge exchange. `systemctl active` alone is not considered readiness.
+The check fails early if the service stops or repeatedly restarts and includes
+service status and the last 100 journal lines in its error. Override
+`rust_health_timeout` only when logs show legitimate slow startup; a longer timeout
+does not repair a crashed server.
 Join from a client with `connect PI_ADDRESS:28015`. Confirm four-player capacity,
 save/restart behavior, CPU temperature, memory and playability before relying on it.
 

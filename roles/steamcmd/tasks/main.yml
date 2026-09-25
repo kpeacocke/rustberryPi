@@ -36,5 +36,6 @@
     dest: /srv/rust/home/.steam/sdk64/steamclient.so
     state: link
     force: true
+    follow: false
     owner: rust
     group: rust

@@ -53,3 +53,12 @@
     group: rust
     mode: '0750'
   loop: [home, steamcmd, server, data]
+
+- name: Prepare private Ansible temporary directories for the Rust account
+  ansible.builtin.file:
+    path: "/srv/rust/home/{{ item }}"
+    state: directory
+    owner: rust
+    group: rust
+    mode: '0700'
+  loop: [.ansible, .ansible/tmp]

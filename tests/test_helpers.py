@@ -230,6 +230,34 @@ class BackupTests(unittest.TestCase):
 
 
 class HealthTests(unittest.TestCase):
+    def test_failed_service_stops_without_waiting(self):
+        with patch.object(health, 'service_status', return_value={'ActiveState': 'failed'}), patch.object(health, 'query') as query:
+            with self.assertRaisesRegex(RuntimeError, 'not running'):
+                health.wait_ready(1800)
+            query.assert_not_called()
+
+    def test_healthy_service_and_query_pass(self):
+        with patch.object(health, 'service_status', return_value={'ActiveState': 'active', 'NRestarts': '0'}), patch.object(health, 'query', return_value=True):
+            health.wait_ready(1800)
+
+    def test_restart_loop_stops_early(self):
+        states = [{'ActiveState': 'activating', 'NRestarts': str(n)} for n in range(4)]
+        with patch.object(health, 'service_status', side_effect=states), patch.object(health, 'query', return_value=False), patch.object(health.time, 'sleep'):
+            with self.assertRaisesRegex(RuntimeError, 'repeatedly restarted'):
+                health.wait_ready(1800)
+
+    def test_timeout_keeps_failure(self):
+        with self.assertRaisesRegex(RuntimeError, 'timed out'):
+            health.wait_ready(0)
+
+    def test_diagnostics_include_journal_even_when_status_exits_nonzero(self):
+        outputs = [SimpleNamespace(stdout='failed status', stderr='', returncode=3),
+                   SimpleNamespace(stdout='actual startup error', stderr='', returncode=0)]
+        with patch.object(health.subprocess, 'run', side_effect=outputs):
+            message = health.diagnose('not ready')
+        self.assertIn('failed status', message)
+        self.assertIn('actual startup error', message)
+
     def test_challenge_round_trip(self):
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as server:
             server.bind(('127.0.0.1', 0))
