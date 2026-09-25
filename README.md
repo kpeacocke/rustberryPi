@@ -244,7 +244,18 @@ Otherwise allow that TCP port in the existing host firewall if one is active.
 Changing the companion port requires removing any old forwarding/firewall rule.
 Router configuration and NetworkManager DNS settings remain operator-managed.
 Enabling UFW also applies the incoming-deny policy to other services; the public
-profile below is intended for a Pi accepting only SSH and Rust/Rust+ connections.
+profile below is intended for a Pi accepting SSH and Rust/Rust+ connections,
+with Raspberry Pi Connect supported through outbound connections.
+
+Raspberry Pi Connect needs no additional inbound UFW rule or router port forward.
+The profile allows outbound connections and their replies, including Connect's
+HTTPS and STUN/TURN traffic. It should therefore preserve an existing Connect
+installation; account linking and installation are not managed by this project.
+After applying the firewall, run `rpi-connect status` and `rpi-connect doctor`
+as your normal signed-in user (without sudo), then test a new Connect session
+from outside your LAN. Keep your current administrative session open until this
+and a second LAN SSH connection work. See the
+[official Connect documentation](https://www.raspberrypi.com/documentation/services/connect.html).
 
 Validation checks the local companion TCP listener after game readiness, but cannot
 prove WAN forwarding or app pairing. Check the current startup journal for companion

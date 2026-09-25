@@ -11,6 +11,12 @@ unchanged until SSH keys have been verified. Public ports are UDP 28015/28017 an
 optional Rust+ TCP 28083. RCON remains loopback-only. Unrelated preexisting UFW
 allowances are preserved and must be reviewed in the reported effective rules.
 
+Raspberry Pi Connect is also supported through the outbound-allow policy and
+stateful replies; no inbound Connect port or router forwarding is required.
+Verify an existing installation with `rpi-connect doctor` as its signed-in user
+and test a new remote session after enabling the firewall. Connect account
+linking is managed separately from Ansible.
+
 Report vulnerabilities privately to the repository owner. Do not attach secrets
 or player databases to public issues. Treat restore archives as trusted operator
 input even though paths, file types and checksums are validated.
