@@ -4,7 +4,7 @@
   "spec": [
     {
       "question_name": "Who may join?",
-      "question_description": "Restricted uses the vanilla skip-queue method for up to four approved friends.",
+      "question_description": "Restricted uses the vanilla skip-queue method for up to five approved friends.",
       "required": true,
       "type": "multiplechoice",
       "variable": "rust_access_mode",
@@ -16,7 +16,7 @@
     },
     {
       "question_name": "Approved SteamID64 values",
-      "question_description": "Required for restricted mode: one to four numeric IDs or numeric profile URLs, separated by lines or commas. Resolve vanity links first. Leave blank for public mode.",
+      "question_description": "Required for restricted mode: one to five numeric IDs or numeric profile URLs, separated by lines or commas. Resolve vanity links first. Leave blank for public mode.",
       "required": false,
       "type": "textarea",
       "variable": "rust_allowed_players",

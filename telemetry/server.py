@@ -159,6 +159,74 @@ def suggestions(data):
                   key=lambda item: item['severity'] != 'urgent')
 
 
+class PlayerHistory:
+    """Persist observed sessions for approved IDs; project names and dates only."""
+    def __init__(self, allowed, names, path):
+        self.allowed = list(dict.fromkeys(str(value) for value in allowed))
+        self.names = names
+        self.path = Path(path) if path else None
+        self.records = {}
+        self.online = set()
+        self.last_write = 0
+        self.error = None
+        self.load_failed = False
+        if self.path and self.path.exists():
+            try:
+                data = json.loads(self.path.read_text())
+                if data.get('version') != 1 or not isinstance(data.get('players'), dict):
+                    raise ValueError('Unsupported player history')
+                for key in self.allowed:
+                    row = data['players'].get(key)
+                    if isinstance(row, dict):
+                        for field in ('last_login', 'last_seen'):
+                            if row.get(field) is not None and not isinstance(row[field], (int, float)):
+                                raise ValueError('Invalid history timestamp')
+                        self.records[key] = row
+            except (OSError, ValueError, TypeError) as error:
+                self.error = type(error).__name__
+                self.load_failed = True  # Preserve the unreadable file for recovery.
+
+    def update(self, rows, now):
+        online = set()
+        for row in rows:
+            key = str(row.get('SteamID'))
+            if key not in self.allowed:
+                continue
+            online.add(key)
+            record = self.records.setdefault(key, {})
+            try:
+                seconds = float(row.get('ConnectedSeconds'))
+                login = now - seconds if 0 <= seconds <= now else None
+            except (TypeError, ValueError):
+                login = None
+            if (key not in self.online or record.get('last_login') is None or
+                    (login is not None and login > record['last_login'] + 10)):
+                record['last_login'] = login
+            record.update(name=str(row.get('DisplayName', 'Approved player'))[:80], last_seen=now)
+        changed_session = online != self.online
+        self.online = online
+        if self.path and not self.load_failed and (changed_session or now - self.last_write >= 60):
+            temporary = self.path.with_suffix('.tmp')
+            try:
+                temporary.write_text(json.dumps({'version': 1, 'players': self.records}))
+                temporary.chmod(0o600)
+                temporary.replace(self.path)
+                self.last_write = now
+                self.error = None
+            except OSError as error:
+                self.error = type(error).__name__
+
+    def public(self, show_names, fresh):
+        output = []
+        for index, key in enumerate(self.allowed):
+            record = self.records.get(key, {})
+            fallback = 'Approved player ' + str(index + 1)
+            output.append({'name': str(self.names.get(key) or record.get('name') or fallback)[:80] if show_names else fallback,
+                           'last_login': record.get('last_login'), 'last_seen': record.get('last_seen'),
+                           'status': ('online' if key in self.online else 'offline') if fresh else 'unknown'})
+        return output
+
+
 class Collector:
     def __init__(self, config):
         self.config = config
@@ -172,6 +240,8 @@ class Collector:
         self.previous_io = None
         self.rcon_error = None
         self.rcon_session = RconSession()
+        self.player_history = PlayerHistory(config.get('allowed_players', []), config.get('player_names', {}),
+                                            config.get('player_history_file'))
 
     def collect(self):
         now = time.time()
@@ -211,6 +281,7 @@ class Collector:
                 raise RconUnavailable()
             rows = reply['playerlist']
             info = reply['serverinfo']
+            self.player_history.update(rows, now)
             current_ids = {str(row.get('SteamID')): str(row.get('DisplayName', 'Player'))[:80] for row in rows}
             if self.previous_ids is not None:
                 for ids, action in ((current_ids.keys() - self.previous_ids.keys(), 'joined'),
@@ -255,6 +326,8 @@ class Collector:
                 'service': service, 'maintenance': maintenance, 'companion_listener': companion,
                 'events': list(self.events), 'history': list(self.history)}
         data['suggestions'] = suggestions(data)
+        data['allowed_players'] = self.player_history.public(self.config['show_names'], self.last_rcon == now)
+        data['player_history_error'] = self.player_history.error
         with self.lock:
             self.snapshot = data
 

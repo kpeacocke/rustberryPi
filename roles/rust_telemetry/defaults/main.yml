@@ -3,6 +3,7 @@ rust_telemetry_port: 8090
 rust_telemetry_desktop_autostart: false
 rust_telemetry_desktop_user: ''
 rust_telemetry_show_names: true
+rust_telemetry_player_names: {} # Optional private SteamID-to-display-name mapping.
 rust_telemetry_check_schedule: '*-*-* 03,15:30:00'
 rust_telemetry_fex: "{{ fex_prefix | default('/usr') }}/bin/FEX"
 rust_telemetry_rootfs: "{{ fex_rootfs_path | default('/opt/fex/rootfs/ubuntu-24.04-2026-08-11') }}"

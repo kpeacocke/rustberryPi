@@ -73,6 +73,26 @@ stale banner, and verify update comparisons before relying on them.
 
 ## Evidence and limits
 
+The Overview and Players & game screens list every approved player from the
+managed access policy, including offline players. Last-login dates are estimates
+derived from Rust's ConnectedSeconds, displayed with ≈ in the browser's local
+timezone. There is no retrospective journal scraping: players not observed since
+this feature was deployed show “Not observed yet”. Names are learned on connection;
+optional private `rust_telemetry_player_names` maps Steam IDs to display aliases
+for players who have not connected yet. `rust_telemetry_show_names: false` also
+anonymises this roster. IDs and addresses never appear in the browser API.
+
+History lives at `/srv/rust/data/.rustberrypi-telemetry/players.json` on USB and
+is included in the existing data backup. It is written on session changes and
+at most once per minute otherwise. Login history survives service restarts and
+OS rebuilds; an interrupted write or sudden power loss can lose recent samples.
+A corrupt history file is preserved and reported instead of overwritten.
+Ansible grants the collector traversal only on the data parent and ownership of
+its own private history directory. Reapply telemetry after restore to restore
+ACLs and ownership; no access to world contents or the access-policy file is granted.
+Offline is only reported after a fresh successful player-list response; unavailable
+RCON reports unknown status and retains the last recorded date.
+
 * Current health and player data require actual device/Rust responses. Unknown
   values stay unknown. Ready requires service active plus A2S and RCON responses. Service active plus unavailable RCON is labelled as
   starting/telemetry unavailable, not conclusively healthy or failed.

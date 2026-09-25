@@ -15,6 +15,14 @@ B = '76561198000000002'
 
 
 class AccessTests(unittest.TestCase):
+    def test_five_approved_players_supported_without_granting_admin(self):
+        players = ['7656119800000000' + str(i) for i in range(1, 6)]
+        desired = access.policy({'mode': 'restricted', 'players': players, 'admins': [A]}, None)
+        self.assertEqual(len(desired['players']), 5)
+        self.assertEqual(desired['admins'], [A])
+        with self.assertRaises(ValueError):
+            access.policy({'mode': 'restricted', 'players': players + ['76561198000000006']}, None)
+
     def test_admin_must_be_approved(self):
         with self.assertRaises(ValueError):
             access.policy({'mode': 'restricted', 'players': [A], 'admins': [B]}, None)
@@ -49,7 +57,7 @@ class AccessTests(unittest.TestCase):
 
     def test_limit_and_invalid_mode(self):
         with self.assertRaises(ValueError):
-            access.policy({'mode': 'restricted', 'players': [str(int(A) + i) for i in range(5)]}, None)
+            access.policy({'mode': 'restricted', 'players': [str(int(A) + i) for i in range(6)]}, None)
         with self.assertRaises(ValueError):
             access.policy({'mode': 'anon'}, None)
 

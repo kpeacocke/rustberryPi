@@ -14,7 +14,7 @@
 
     - name: Ask for approved Steam IDs when restricted
       ansible.builtin.pause:
-        prompt: Enter one to four SteamID64 values separated by commas
+        prompt: Enter one to five SteamID64 values separated by commas
       register: rust_survey_players
       when:
         - rust_access_mode == 'restricted'

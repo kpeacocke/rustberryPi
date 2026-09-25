@@ -37,8 +37,8 @@ def policy(request, previous):
     if mode not in ('public', 'restricted'):
         raise ValueError('Choose public or restricted access')
     players = parse_ids(request.get('players', []))
-    if mode == 'restricted' and not 1 <= len(players) <= 4:
-        raise ValueError('Restricted mode requires one to four distinct players')
+    if mode == 'restricted' and not 1 <= len(players) <= 5:
+        raise ValueError('Restricted mode requires one to five distinct players')
     result = {'mode': mode, 'players': players if mode == 'restricted' else []}
     if admin_input == 'preserve':
         if previous and 'admins' in previous:

@@ -483,7 +483,7 @@ licenses and terms; no license to redistribute their binaries is granted here.
 `rust_access_mode` accepts `public`, `restricted`, or `preserve` (the default).
 Public means any authenticated Steam player; Steam authentication is never disabled.
 Restricted requires `rust_allowed_players`, a YAML list or comma/newline-separated
-text containing one to four SteamID64 values or numeric Steam profile URLs. Vanity
+text containing one to five SteamID64 values or numeric Steam profile URLs. Vanity
 links must first be resolved to numeric IDs. Store actual IDs in ignored host vars
 or AWX inventory/survey answers, never in the public project.
 
@@ -517,7 +517,7 @@ survey IDs are operational data, not secret credentials, and may appear in AWX.
 
 This uses Facepunch's documented vanilla method: `server.maxplayers=0` plus
 `skipqueueid` entries in the persistent identity's `cfg/users.cfg`. The approved
-list is limited to four, replacing the ordinary four-slot limit. Join permission alone grants no admin rights. When administrator management is
+list is limited to five, replacing the ordinary four-slot limit. Join permission alone grants no admin rights. When administrator management is
 left at `preserve`, existing owners/moderators outside the approved list cause a
 failure for explicit review because admins bypass the queue. Bans are preserved.
 Unknown users.cfg commands and conflicting server.cfg capacity settings also fail

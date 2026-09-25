@@ -7,6 +7,7 @@
       - rust_telemetry_port | int <= 65535
       - rust_telemetry_port | int not in [28015, 28016, 28017, rust_plus_port | int]
       - ansible_facts['distribution'] == 'Debian'
+      - rust_telemetry_player_names is mapping
       - "rust_telemetry_check_schedule is match('^[a-zA-Z0-9*,: /.-]+$')"
 
 - name: Require persistent storage already mounted
@@ -27,7 +28,7 @@
 
 - name: Install distro telemetry dependencies
   ansible.builtin.apt:
-    name: [python3-psutil, python3-websocket, python3-apt]
+    name: [python3-psutil, python3-websocket, python3-apt, acl]
     state: present
     update_cache: true
     cache_valid_time: 86400
@@ -163,6 +164,37 @@
   notify: Start game after telemetry configuration
   no_log: true
 
+- name: Permit traversal to telemetry state without granting game data access
+  ansible.posix.acl:
+    path: '{{ item }}'
+    entity: rust-telemetry
+    etype: user
+    permissions: x
+    state: present
+  loop: [/srv/rust, /srv/rust/data]
+
+- name: Create persistent telemetry state directory
+  ansible.builtin.file:
+    path: /srv/rust/data/.rustberrypi-telemetry
+    state: directory
+    owner: rust-telemetry
+    group: rust-telemetry
+    mode: '0700'
+
+- name: Reclaim telemetry state ownership after an OS rebuild or restore
+  ansible.builtin.file:
+    path: /srv/rust/data/.rustberrypi-telemetry
+    state: directory
+    owner: rust-telemetry
+    group: rust-telemetry
+    recurse: true
+
+- name: Read managed player policy for the private roster
+  ansible.builtin.slurp:
+    src: /srv/rust/data/access.json
+  register: rust_telemetry_access
+  no_log: true
+
 - name: Configure collector and maintenance probe
   ansible.builtin.copy:
     content: >-
@@ -170,12 +202,16 @@
           'password_file': '/etc/rustberrypi/rcon-password', 'assets': '/opt/rustberrypi/dashboard',
           'companion_port': rust_plus_port | int, 'storage_uuid': rust_telemetry_mount.stdout | trim,
           'fex': rust_telemetry_fex, 'rootfs': rust_telemetry_rootfs,
-          'fex_version': rust_telemetry_fex_version} | to_nice_json }}
+          'fex_version': rust_telemetry_fex_version,
+          'allowed_players': (rust_telemetry_access.content | b64decode | from_json).players,
+          'player_names': rust_telemetry_player_names,
+          'player_history_file': '/srv/rust/data/.rustberrypi-telemetry/players.json'} | to_nice_json }}
     dest: /etc/rustberrypi/telemetry.json
     owner: root
     group: rust-telemetry
     mode: '0640'
   notify: Restart telemetry
+  no_log: true
 
 - name: Install telemetry service units
   ansible.builtin.template:

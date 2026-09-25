@@ -7,6 +7,7 @@ from pathlib import Path
 import sys
 import threading
 import time
+import tempfile
 from types import SimpleNamespace
 import unittest
 from unittest.mock import MagicMock, patch
@@ -19,6 +20,43 @@ with patch.dict(sys.modules, {'psutil': MagicMock(), 'websocket': MagicMock()}):
 
 
 class TelemetryTests(unittest.TestCase):
+    def test_history_persists_login_and_never_projects_steam_ids(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'players.json'
+            history = server.PlayerHistory(['approved', 'unseen'], {}, path)
+            history.update([{'SteamID': 'approved', 'DisplayName': '<script>name</script>',
+                             'ConnectedSeconds': 30}, {'SteamID': 'unapproved', 'DisplayName': 'hidden'}], 1000)
+            self.assertEqual(history.public(True, True)[0]['last_login'], 970)
+            self.assertEqual(history.public(True, True)[1]['last_login'], None)
+            self.assertNotIn('hidden', path.read_text())
+            restored = server.PlayerHistory(['approved', 'unseen'], {}, path)
+            self.assertEqual(restored.public(True, False)[0]['last_login'], 970)
+            self.assertEqual(restored.public(True, False)[0]['status'], 'unknown')
+            restored.update([], 1100)
+            self.assertEqual(restored.public(True, True)[0]['status'], 'offline')
+            self.assertEqual(restored.public(True, True)[0]['last_seen'], 1000)
+            self.assertNotIn('SteamID', json.dumps(restored.public(True, True)))
+            self.assertNotIn('<script>', json.dumps(restored.public(False, True)))
+            self.assertEqual(server.PlayerHistory([], {}, path).public(True, True), [])
+
+    def test_history_reconnect_and_missing_duration_are_honest(self):
+        history = server.PlayerHistory(['one'], {}, None)
+        history.update([{'SteamID': 'one', 'ConnectedSeconds': 100}], 1000)
+        history.update([{'SteamID': 'one', 'ConnectedSeconds': 2}], 1010)
+        self.assertEqual(history.public(True, True)[0]['last_login'], 1008)
+        history.update([], 1020)
+        history.update([{'SteamID': 'one'}], 1030)
+        self.assertIsNone(history.public(True, True)[0]['last_login'])
+
+    def test_corrupt_history_is_preserved_and_reported(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'players.json'
+            path.write_text('corrupt original')
+            history = server.PlayerHistory(['one'], {}, path)
+            history.update([{'SteamID': 'one'}], 1000)
+            self.assertEqual(path.read_text(), 'corrupt original')
+            self.assertIsNotNone(history.error)
+
     def test_player_projection_never_exposes_addresses_or_ids(self):
         rows = [{'DisplayName': '<script>name</script>', 'SteamID': 'private', 'Address': 'private',
                  'Ping': 21, 'ConnectedSeconds': 12}]
