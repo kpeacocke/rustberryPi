@@ -14,6 +14,8 @@ rust_storage_device: ""  # Only an existing blank USB partition, never a whole d
 rust_allow_reboot: true
 rust_update: false  # Explicit maintenance run; never downloads updates on every converge.
 rust_start: true  # Set false for restore preparation.
+rust_plus_enabled: false  # Enable after WAN routing and TCP forwarding are verified.
+rust_plus_port: 28083
 rust_manage_firewall: false  # Optional UFW; see README before enabling.
 rust_ssh_port: 22
 rust_client_cidr: "192.168.0.0/16"

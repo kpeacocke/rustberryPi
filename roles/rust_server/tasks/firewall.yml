@@ -23,3 +23,11 @@
     state: enabled
     policy: deny
     direction: incoming
+
+- name: Manage companion TCP access for the configured port
+  community.general.ufw:
+    rule: allow
+    port: "{{ rust_plus_port | string }}"
+    proto: tcp
+    comment: RustberryPi companion
+    delete: "{{ not (rust_plus_enabled | bool) }}"

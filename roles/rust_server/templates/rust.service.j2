@@ -17,7 +17,7 @@ Environment=HOME=/srv/rust/home
 Environment=FEX_ROOTFS={{ fex_rootfs_path }}
 Environment=LD_LIBRARY_PATH=/srv/rust/server:/srv/rust/server/RustDedicated_Data/Plugins/x86_64
 ExecStartPre=/usr/bin/findmnt --noheadings --source UUID={{ rust_storage_verified_uuid }} --mountpoint /srv/rust
-ExecStart={{ fex_prefix }}/bin/FEX /srv/rust/server/RustDedicated -batchmode -nographics -logFile - +server.identity {{ rust_identity }} +server.hostname "{{ rust_hostname }}" +server.level "Procedural Map" +server.seed {{ rust_seed }} +server.worldsize {{ rust_worldsize }} +server.maxplayers {{ rust_maxplayers }} +server.port 28015 +server.queryport 28017 +rcon.ip 127.0.0.1 +rcon.port 28016 +app.port 1-
+ExecStart={{ fex_prefix }}/bin/FEX /srv/rust/server/RustDedicated -batchmode -nographics -logFile - +server.identity {{ rust_identity }} +server.hostname "{{ rust_hostname }}" +server.level "Procedural Map" +server.seed {{ rust_seed }} +server.worldsize {{ rust_worldsize }} +server.maxplayers {{ rust_maxplayers }} +server.port 28015 +server.queryport 28017 +rcon.ip 127.0.0.1 +rcon.port 28016 +app.port {{ rust_plus_enabled | bool | ternary(rust_plus_port | string, '1-') }}
 KillSignal=SIGINT
 KillMode=mixed
 TimeoutStopSec=180

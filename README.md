@@ -22,7 +22,7 @@ require the hardware acceptance procedure below.
 | RootFS | FEX Ubuntu 24.04, image dated 2026-08-11; Ubuntu 24.04.4 userspace |
 | Steam app | `258550`, public branch, anonymous login |
 | World | identity `kp-pi5`, procedural size `1500`, seed `12345`, four players |
-| Network | UDP 28015 game, UDP 28017 query; RCON loopback TCP 28016; Rust+ disabled |
+| Network | UDP 28015 game, UDP 28017 query; RCON loopback TCP 28016; Rust+ optional TCP 28083 |
 
 RootFS SHA256:
 `2854b06d3ff1b8f6e526135bfb6dd5b7b30ab3ab73e79ae933a3d9fed959a178`.
@@ -214,16 +214,41 @@ Default firewall management is off to preserve the Pi's other jobs. Permit UDP
 allows the two UDP ports from `rust_client_cidr` and enables incoming deny policy.
 Review existing UFW/nftables rules and other services before enabling it. Rules
 already present are preserved, so inspect actual exposure. Router forwarding and
-Internet access are not configured. RCON is loopback-only and Rust+ is disabled;
+Internet access are not configured. RCON is loopback-only and Rust+ is disabled by default;
 do not forward TCP 28016.
 
-Rust+ is disabled using `+app.port 1-`, Facepunch's command-line spelling of -1;
+Rust+ is disabled by default using `+app.port 1-`, Facepunch's command-line spelling of -1;
 zero does not disable the companion listener. See the
 [official Rust+ server guide](https://wiki.facepunch.com/rust/rust-companion-server).
 An early Steam interface warning or slow IPC call is not by itself evidence of a
 failed server: check subsequent Steam initialization/connection, readiness and
 client joins. Repeated warnings during play or connection failures need separate
 investigation; logs are not filtered or suppressed.
+
+### Enable Rust+ through WAN2/NBN
+
+Set `rust_plus_enabled: true` in an ignored host-variable file under
+`inventory/host_vars/pidesktop/`. The default `rust_plus_port` is TCP 28083.
+Reserve the Pi's LAN address and route its outbound IPv4 traffic through WAN2 on
+the DrayTek. Verify `curl -4 https://api.ipify.org` matches WAN2's current address.
+Forward **WAN2 TCP 28083 to the Pi TCP 28083**, then rerun the normal playbook.
+This changes the service and restarts the game. No public IP is hardcoded into the
+repository; correct outbound routing lets Rust discover the NBN public address.
+
+If `rust_manage_firewall` is already enabled, the role allows the companion TCP
+port from any source while Rust+ is enabled and removes that allowance when disabled.
+Otherwise allow that TCP port in the existing host firewall if one is active.
+Changing the companion port requires removing any old forwarding/firewall rule.
+Router configuration and NetworkManager DNS settings remain operator-managed.
+Do not enable UFW just to add Rust+: that also applies the role's existing incoming
+deny policy to other services.
+
+Validation checks the local companion TCP listener after game readiness, but cannot
+prove WAN forwarding or app pairing. Check the current startup journal for companion
+connectivity errors, then pair from Rust's in-game Rust+ menu and verify the phone
+app over mobile data. Keep `companion.id` in the identity directory: it is covered
+by the existing data backup. Disable by setting `rust_plus_enabled: false` and
+rerunning; pairing identity is preserved.
 
 ## NAS backup and restore
 

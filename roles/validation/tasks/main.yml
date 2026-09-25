@@ -4,3 +4,13 @@
     argv: [python3, /usr/local/libexec/pi5-rust/health.py, "{{ rust_health_timeout | default(1800) | string }}"]
   changed_when: false
   when: rust_start | bool
+
+- name: Verify companion listener when enabled
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: "{{ rust_plus_port }}"
+    timeout: 60
+    msg: Rust+ TCP listener is unavailable. Inspect journalctl -u rust for companion connectivity errors.
+  when:
+    - rust_start | bool
+    - rust_plus_enabled | bool

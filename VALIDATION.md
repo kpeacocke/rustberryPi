@@ -74,3 +74,12 @@ with Facepunch's documented disable syntax `+app.port 1-`. This remains a pendin
 on-Pi verification until the changed service is deployed. Early Steam interface
 and 251 ms IPC warnings preceded successful initialization; no unsupported Steam
 workaround or log suppression was introduced.
+
+## Optional Rust+ on WAN2 — 2026-09-25
+
+The user verified outbound IPv4 through NBN/WAN2 after a temporary NetworkManager
+DNS change. Added `rust_plus_enabled` (default false), port 28083, optional UFW
+management and a local TCP-listener check. Both enabled and disabled service units
+were rendered through Ansible in check mode and their companion arguments verified.
+Deployment syntax and production lint passed. Router forwarding, live companion
+registration and phone pairing remain to be verified on the user's network.

@@ -9,6 +9,9 @@
       - rust_seed | int >= 0
       - rust_seed | int <= 2147483647
       - rust_hostname is match('^[a-zA-Z0-9 ._-]+$')
+      - rust_plus_port | int >= 10000
+      - rust_plus_port | int <= 65535
+      - rust_plus_port | int not in [28015, 28016, 28017]
 
 - name: Inspect existing identity directory
   ansible.builtin.stat:
