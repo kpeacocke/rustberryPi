@@ -85,17 +85,30 @@
     daemon_reload: true
   when: rust_nas_mount.changed # noqa: no-handler -- Apply fstab changes before validating storage.
 
+- name: Resolve generated NAS mount unit name
+  ansible.builtin.command:
+    argv: [systemd-escape, --path, --suffix=mount, '{{ rust_backup_mount }}']
+  register: rust_nas_unit
+  changed_when: false
+
+- name: Start the actual SMB mount before verifying storage
+  ansible.builtin.systemd_service:
+    name: '{{ rust_nas_unit.stdout | trim }}'
+    state: started
+
+- name: Install safe NAS verifier
+  ansible.builtin.copy:
+    src: check_nas.py
+    dest: /usr/local/libexec/pi5-rust/check_nas.py
+    owner: root
+    group: root
+    mode: '0755'
+
 - name: Check NAS read and write access without leaving a test file
   ansible.builtin.command:
     argv:
       - /usr/bin/python3
-      - -c
-      - >-
-        import os,tempfile;
-        from pathlib import Path;
-        p=Path('{{ rust_backup_mount }}');
-        assert os.stat(p).st_dev not in (os.stat('/').st_dev,os.stat('/srv/rust').st_dev);
-        f=tempfile.TemporaryFile(dir=p);
-        f.write(b'rustberryPi backup storage check'); f.flush(); os.fsync(f.fileno());
-        f.seek(0); assert f.read()==b'rustberryPi backup storage check'; f.close()
+      - /usr/local/libexec/pi5-rust/check_nas.py
+      - '{{ rust_backup_mount }}'
+      - '//{{ rust_nas_server }}/{{ rust_nas_share }}'
   changed_when: false
