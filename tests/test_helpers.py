@@ -39,9 +39,16 @@ class ServiceTests(unittest.TestCase):
             self.assertEqual(run.call_count, 1)
 
     def test_start_when_stopped(self):
-        with tempfile.TemporaryFile(mode='w') as lock, patch('builtins.open', return_value=lock), patch.object(service.subprocess, 'run', side_effect=[SimpleNamespace(returncode=3), SimpleNamespace(returncode=0)]) as run:
+        with tempfile.TemporaryFile(mode='w') as lock, patch('builtins.open', return_value=lock), patch.object(service.subprocess, 'run', side_effect=[SimpleNamespace(returncode=3), SimpleNamespace(returncode=1), SimpleNamespace(returncode=0)]) as run:
             service.main('start')
             self.assertEqual(run.call_args.args[0], ['systemctl', 'start', 'rust.service'])
+
+    def test_failed_service_reset_precedes_explicit_retry(self):
+        for action in ['start', 'restart']:
+            with self.subTest(action=action), tempfile.TemporaryFile(mode='w') as lock, patch('builtins.open', return_value=lock), patch.object(service.subprocess, 'run', side_effect=[SimpleNamespace(returncode=3), SimpleNamespace(returncode=0), SimpleNamespace(returncode=0), SimpleNamespace(returncode=0)]) as run:
+                service.main(action)
+                commands = [call.args[0] for call in run.call_args_list]
+                self.assertEqual(commands[-2:], [['systemctl', 'reset-failed', 'rust.service'], ['systemctl', action, 'rust.service']])
 
     def test_invalid_action(self):
         with self.assertRaises(ValueError):

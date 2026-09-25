@@ -194,7 +194,10 @@ Rust forced wipes and protocol changes are upstream behavior; backups do not mak
 old saves compatible with every new release.
 
 The systemd unit restarts on failure with rate limits. Configuration changes trigger
-restart; ordinary convergence does not. First map generation under emulation may
+restart; ordinary convergence does not. Unity uses `-logFile -` to write directly to the console captured by
+journald, avoiding attempts to reopen `/dev/stdout` as a regular file. An explicit
+deployment start/restart clears a failed service's start-limit state before retrying;
+automatic crash restarts remain rate-limited. First map generation under emulation may
 be slow: readiness waits up to 30 minutes for a real A2S_INFO UDP response, including
 Steam's challenge exchange. `systemctl active` alone is not considered readiness.
 The check fails early if the service stops or repeatedly restarts and includes

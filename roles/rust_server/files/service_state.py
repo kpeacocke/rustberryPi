@@ -13,6 +13,11 @@ def main(action):
         active = subprocess.run(['systemctl', 'is-active', '--quiet', 'rust.service']).returncode == 0
         if (action == 'start' and active) or (action == 'stop' and not active):
             return
+        if action in {'start', 'restart'} and not active:
+            failed = subprocess.run(['systemctl', 'is-failed', '--quiet', 'rust.service']).returncode == 0
+            if failed:
+                # Only an explicit deployment retry resets the crash/start limit.
+                subprocess.run(['systemctl', 'reset-failed', 'rust.service'], check=True)
         subprocess.run(['systemctl', action, 'rust.service'], check=True)
         print('changed')
 

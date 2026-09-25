@@ -48,3 +48,15 @@ Readiness now checks systemd state, fails early on a stopped/crashing service, a
 includes status/journal diagnostics. All four syntax checks and 32 helper tests
 passed locally, including five new health failure/diagnostic cases. These changes
 do not by themselves establish that Rust can start on the Pi.
+
+## Unity log-open failure — 2026-09-25
+
+The supplied journal establishes the immediate startup failure: Unity reports
+`Unable to open log file, exiting.` with `-logfile /dev/stdout`, exits 127, and
+systemd subsequently hits its start limit. Changed the unit to the documented
+Unity console form `-logFile -` and made explicit deployment retries reset failed
+state before start/restart. Automatic restart limits are unchanged. Added a helper
+test covering start and restart after failure. The Pi must rerun to establish
+whether startup now completes or encounters a later runtime issue.
+
+Reference: [Unity Player command-line arguments](https://docs.unity3d.com/6000.0/Documentation/Manual/PlayerCommandLineArguments.html).
