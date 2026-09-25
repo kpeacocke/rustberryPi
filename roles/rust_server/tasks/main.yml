@@ -64,7 +64,7 @@
     src: "{{ item }}"
     dest: "/usr/local/libexec/pi5-rust/{{ item }}"
     mode: '0755'
-  loop: [steam_manage.py, health.py, service_state.py]
+  loop: [steam_manage.py, health.py, service_state.py, access.py]
 
 - name: Install or explicitly check for game updates
   ansible.builtin.command:
@@ -78,6 +78,19 @@
   register: rust_server_install
   changed_when: "'updated' in rust_server_install.stdout"
   notify: Restart Rust
+
+- name: Validate and reconcile player access under the maintenance lock
+  ansible.builtin.command:
+    argv: [python3, /usr/local/libexec/pi5-rust/access.py, "{{ rust_identity }}"]
+    stdin: "{{ {'mode': rust_access_mode | default('preserve'), 'players': rust_allowed_players | default('')} | to_json }}"
+  register: rust_server_access
+  changed_when: (rust_server_access.stdout | from_json).changed
+  no_log: true
+  notify: Restart Rust
+
+- name: Select effective player capacity
+  ansible.builtin.set_fact:
+    rust_server_effective_maxplayers: "{{ (rust_server_access.stdout | from_json).maxplayers }}"
 
 - name: Write persistent deployment metadata
   ansible.builtin.copy:

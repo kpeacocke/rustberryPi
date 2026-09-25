@@ -1,0 +1,31 @@
+---
+- name: Ask for player access on an interactive controller
+  hosts: rust_servers
+  gather_facts: false
+  vars_prompt:
+    - name: rust_access_mode
+      prompt: "Player access: public (any Steam player) or restricted (approved friends)"
+      private: false
+      default: restricted
+  tasks:
+    - name: Validate selected mode
+      ansible.builtin.assert:
+        that: rust_access_mode in ['public', 'restricted']
+
+    - name: Ask for approved Steam IDs when restricted
+      ansible.builtin.pause:
+        prompt: Enter one to four SteamID64 values separated by commas
+      register: rust_survey_players
+      when:
+        - rust_access_mode == 'restricted'
+        - rust_allowed_players | default('') | length == 0
+      no_log: true
+
+    - name: Retain answers for the convergence play
+      ansible.builtin.set_fact:
+        rust_access_mode: "{{ rust_access_mode }}"
+        rust_allowed_players: "{{ rust_survey_players.user_input | default(rust_allowed_players | default('')) }}"
+      no_log: true
+
+- name: Converge with the selected access policy
+  ansible.builtin.import_playbook: rust.yml

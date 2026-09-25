@@ -116,3 +116,15 @@ The storage account tasks adopted UID 2001/GID 2011 from simulated persistent
 ownership, converged with zero changes on repeat, and rejected a requested
 conflicting GID while preserving ownership. These tests did not exercise ARM
 emulation, mounts or a reboot, and have not deployed this update to a live Pi.
+
+## Player access survey
+
+Production lint and the interactive playbook syntax check passed (including its
+imported convergence play). All 49 helper tests passed, including empty/invalid
+list rejection, numeric profile parsing, duplicate handling, unlisted admin
+rejection, revocation, preservation across unattended runs, and filesystem apply
+idempotence with mocked service control. The helper stopped the mocked service
+before writing and did not stop it on the unchanged second application.
+The AWX survey JSON was parsed locally but has not been imported into a live AWX
+instance. Actual approved/unapproved player joins remain a live Pi acceptance
+check; unit tests do not establish game admission behaviour.

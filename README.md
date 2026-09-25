@@ -472,3 +472,66 @@ promise that already-public information has been erased.
 
 Project automation is MIT licensed. FEX, Ubuntu and Rust/Steam retain their own
 licenses and terms; no license to redistribute their binaries is granted here.
+
+## Public or friends-only access
+
+`rust_access_mode` accepts `public`, `restricted`, or `preserve` (the default).
+Public means any authenticated Steam player; Steam authentication is never disabled.
+Restricted requires `rust_allowed_players`, a YAML list or comma/newline-separated
+text containing one to four SteamID64 values or numeric Steam profile URLs. Vanity
+links must first be resolved to numeric IDs. Store actual IDs in ignored host vars
+or AWX inventory/survey answers, never in the public project.
+
+For an interactive CLI deployment:
+
+```sh
+ansible-playbook playbooks/rust-survey.yml --ask-become-pass
+```
+
+The wrapper asks for public/restricted, then asks for IDs if restricted and none
+were supplied. For local execution on the Pi add `--connection local` and
+`-e ansible_python_interpreter=/usr/bin/python3` as usual. Noninteractive/AWX runs
+use `playbooks/rust.yml`, supplying the same variables through inventory or survey.
+
+### AWX survey
+
+`awx/survey.json` is a ready survey specification for a job template using
+`playbooks/rust.yml`. In the AWX API, POST that JSON to
+`/api/v2/job_templates/<template-id>/survey_spec/`, then PATCH the job template with
+`{"survey_enabled": true}`. Alternatively recreate its two questions in the Survey
+editor. Use your existing authenticated AWX session or API tooling; no controller
+URL or token is stored here. No AWX instance has been configured by this repository.
+
+The choice defaults to restricted. The textarea remains visible for both choices;
+AWX does not conditionally show it here. It is optional in the UI so public mode
+can leave it empty, but restricted mode rejects an empty/malformed list. Survey
+answers override inventory values for that run. Restrict access to AWX job details:
+survey IDs are operational data, not secret credentials, and may appear in AWX.
+
+### Behaviour and limits
+
+This uses Facepunch's documented vanilla method: `server.maxplayers=0` plus
+`skipqueueid` entries in the persistent identity's `cfg/users.cfg`. The approved
+list is limited to four, replacing the ordinary four-slot limit. No admin rights
+are granted. Existing owners/moderators outside that list cause a failure for
+explicit review because admins can bypass the queue; existing bans are preserved.
+Unknown users.cfg commands and conflicting server.cfg capacity settings also fail
+for review. The approved list replaces all skipqueue entries, so removing an ID
+revokes its queue access. A pre-management users.cfg copy is retained privately.
+
+Changes stop Rust gracefully under the maintenance lock before editing its files,
+then the normal handlers restart it. Expect players to disconnect and a normal
+startup delay. Repeated unchanged policies do not stop/restart the service, even
+if Rust reformats the skipqueue names. The world/player data is preserved.
+
+The selected policy is stored in `/srv/rust/data/access.json`, included in backups.
+Default `preserve` reuses it on subsequent runs and microSD rebuilds; it never
+silently reopens an already restricted deployment. New deployments with no saved
+policy default to public unless you explicitly choose restricted. Explicit public
+mode removes queue entries but retains existing admin/ban records.
+
+After deployment, test an approved player's join and an unapproved player's
+rejection. A2S readiness only proves the server responds, not admission enforcement.
+The server can still be discoverable; this restricts joining, not listing or packet
+exposure. The native method is documented at:
+https://wiki.facepunch.com/rust/Creating_a_hidden_whitelisted_server

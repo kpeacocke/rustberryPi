@@ -1,0 +1,29 @@
+{
+  "name": "Rust player access",
+  "description": "Public means any authenticated Steam player, not anonymous Steam authentication.",
+  "spec": [
+    {
+      "question_name": "Who may join?",
+      "question_description": "Restricted uses the vanilla skip-queue method for up to four approved friends.",
+      "required": true,
+      "type": "multiplechoice",
+      "variable": "rust_access_mode",
+      "choices": "restricted\npublic",
+      "default": "restricted",
+      "min": 0,
+      "max": 1024,
+      "new_question": true
+    },
+    {
+      "question_name": "Approved SteamID64 values",
+      "question_description": "Required for restricted mode: one to four numeric IDs or numeric profile URLs, separated by lines or commas. Resolve vanity links first. Leave blank for public mode.",
+      "required": false,
+      "type": "textarea",
+      "variable": "rust_allowed_players",
+      "default": "",
+      "min": 0,
+      "max": 4096,
+      "new_question": true
+    }
+  ]
+}
