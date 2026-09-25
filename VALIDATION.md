@@ -60,3 +60,17 @@ test covering start and restart after failure. The Pi must rerun to establish
 whether startup now completes or encounters a later runtime issue.
 
 Reference: [Unity Player command-line arguments](https://docs.unity3d.com/6000.0/Documentation/Manual/PlayerCommandLineArguments.html).
+
+## Live acceptance and Rust+ correction — 2026-09-25
+
+User-provided recaps establish successful convergence followed by an unchanged
+run (`ok=49 changed=0 failed=0`). The user joined successfully and confirmed startup
+after reboot. The reboot journal reports `Server startup complete`, bootstrap in
+216.30 seconds, Steam connected, and a player spawned. This verifies those core
+PoC behaviors, not sustained performance, world-state persistence or NAS recovery.
+
+The same journal shows an unwanted Rust+ connectivity test. Replaced `+app.port 0`
+with Facepunch's documented disable syntax `+app.port 1-`. This remains a pending
+on-Pi verification until the changed service is deployed. Early Steam interface
+and 251 ms IPC warnings preceded successful initialization; no unsupported Steam
+workaround or log suppression was introduced.

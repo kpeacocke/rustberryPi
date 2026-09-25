@@ -5,10 +5,11 @@ Trixie arm64, 4 KB Raspberry Pi kernel, FEX and a vanilla four-player Rust serve
 The OS lives on microSD; the ext4 USB labelled `RUSTSERVER` holds `/srv/rust`.
 No plugins, containers, game-server framework or scheduled game updates.
 
-**This repository is implemented and statically validated, not a claim that Rust
-has been proved playable under FEX on this Pi.** The existing host proved x86-64
-Ubuntu execution. SteamCMD, Rust startup, performance, reboot recovery and live
-idempotence still require the hardware acceptance procedure below.
+**The core PoC has been demonstrated on KP's Pi:** deployment and readiness passed,
+an unchanged second run reported zero changes, and a player joined successfully.
+Startup after reboot also succeeded; the supplied log reported 216.30 seconds for
+bootstrap. Sustained performance, saved-state recovery and NAS backup/restore still
+require the hardware acceptance procedure below.
 
 ## Established host and pins
 
@@ -215,6 +216,14 @@ Review existing UFW/nftables rules and other services before enabling it. Rules
 already present are preserved, so inspect actual exposure. Router forwarding and
 Internet access are not configured. RCON is loopback-only and Rust+ is disabled;
 do not forward TCP 28016.
+
+Rust+ is disabled using `+app.port 1-`, Facepunch's command-line spelling of -1;
+zero does not disable the companion listener. See the
+[official Rust+ server guide](https://wiki.facepunch.com/rust/rust-companion-server).
+An early Steam interface warning or slow IPC call is not by itself evidence of a
+failed server: check subsequent Steam initialization/connection, readiness and
+client joins. Repeated warnings during play or connection failures need separate
+investigation; logs are not filtered or suppressed.
 
 ## NAS backup and restore
 
