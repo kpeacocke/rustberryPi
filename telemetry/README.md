@@ -5,6 +5,10 @@ every five seconds and keeps ten minutes of trends in memory. RCON is loopback-o
 with a random per-host password; only `serverinfo` and `playerlist` are queried.
 The browser receives no RCON credential, Steam ID, player address or raw log text.
 Player names are optional (`rust_telemetry_show_names: false` anonymises them).
+Successful RCON polls share one persistent WebSocket connection. After a failed
+connection or command, the collector closes it and waits 60 seconds before retrying;
+host metrics continue updating and old game samples retain their timestamps.
+This avoids creating a new connection every five seconds and rapid failed retries.
 The API has no mutation or arbitrary-command endpoint, rejects non-local Host
 headers, and does not enable CORS. Never forward this port or proxy it publicly.
 

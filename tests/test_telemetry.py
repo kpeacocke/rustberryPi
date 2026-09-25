@@ -58,6 +58,38 @@ class TelemetryTests(unittest.TestCase):
         self.assertEqual([json.loads(call.args[0])['Message'] for call in client.send.call_args_list],
                          ['serverinfo', 'playerlist'])
 
+    def test_persistent_rcon_reuses_connection_and_unique_identifiers(self):
+        client = MagicMock()
+        client.recv.side_effect = [json.dumps({'Identifier': i, 'Message': '{}' if i % 2 else '[]'})
+                                  for i in range(1, 5)]
+        session = server.RconSession()
+        with patch.object(server.Path, 'read_text', return_value='private'), \
+                patch.object(server.websocket, 'create_connection', return_value=client) as connect:
+            self.assertIsNotNone(session.poll('credential'))
+            self.assertIsNotNone(session.poll('credential'))
+            connect.assert_called_once()
+        self.assertEqual([json.loads(call.args[0])['Identifier'] for call in client.send.call_args_list], [1, 2, 3, 4])
+
+    def test_rcon_failure_closes_connection_and_waits_before_retry(self):
+        client = MagicMock()
+        client.recv.side_effect = ConnectionResetError('sensitive URL must not be logged')
+        session = server.RconSession()
+        with patch.object(server.Path, 'read_text', return_value='private'), \
+                patch.object(server.websocket, 'create_connection', return_value=client) as connect, \
+                patch.object(server.time, 'monotonic', return_value=100), \
+                self.assertLogs(level='WARNING') as logs:
+            self.assertIsNone(session.poll('credential'))
+            self.assertIsNone(session.poll('credential'))
+            connect.assert_called_once()
+            client.close.assert_called_once()
+            self.assertEqual(session.next_attempt, 160)
+            self.assertNotIn('sensitive', ''.join(logs.output))
+        with patch.object(server.Path, 'read_text', return_value='private'), \
+                patch.object(server.websocket, 'create_connection', side_effect=ConnectionResetError) as connect, \
+                patch.object(server.time, 'monotonic', return_value=161):
+            self.assertIsNone(session.poll('credential'))
+            connect.assert_called_once()
+
     def test_http_read_only_and_host_allowlist(self):
         collector = SimpleNamespace(lock=threading.Lock(), snapshot={'sampled_at': time.time()})
         httpd = ThreadingHTTPServer(('127.0.0.1', 0), server.handler(collector, ROOT / 'dashboard', 0))

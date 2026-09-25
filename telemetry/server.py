@@ -40,25 +40,72 @@ def a2s_ready():
         return False
 
 
-def rcon(password):
+def rcon_query(client, first_identifier=1):
     # Only these two fixed read-only commands can be issued by this service.
     result = {}
+    for identifier, command in enumerate(('serverinfo', 'playerlist'), first_identifier):
+        client.send(json.dumps({'Identifier': identifier, 'Message': command, 'Name': 'telemetry'}))
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            message = client.recv()
+            if len(message) > 1024 * 1024:
+                raise ValueError('Oversized RCON response')
+            packet = json.loads(message)
+            if packet.get('Identifier') == identifier:
+                result[command] = json.loads(packet['Message'])
+                break
+        else:
+            raise TimeoutError('RCON command timed out')
+    return result
+
+
+def rcon(password):
     with websocket.create_connection('ws://127.0.0.1:28016/' + password, timeout=3,
                                      http_no_proxy=['127.0.0.1']) as client:
-        for identifier, command in enumerate(('serverinfo', 'playerlist'), 1):
-            client.send(json.dumps({'Identifier': identifier, 'Message': command, 'Name': 'telemetry'}))
-            deadline = time.monotonic() + 5
-            while time.monotonic() < deadline:
-                message = client.recv()
-                if len(message) > 1024 * 1024:
-                    raise ValueError('Oversized RCON response')
-                packet = json.loads(message)
-                if packet.get('Identifier') == identifier:
-                    result[command] = json.loads(packet['Message'])
-                    break
-            else:
-                raise TimeoutError('RCON command timed out')
-    return result
+        return rcon_query(client)
+
+
+class RconUnavailable(Exception):
+    """No fresh RCON sample during a connection failure or its retry interval."""
+
+
+class RconSession:
+    """Reuse successful connections; leave a quiet interval after any failure."""
+    def __init__(self):
+        self.client = None
+        self.next_attempt = 0
+        self.identifier = 1
+        self.error = None
+
+    def poll(self, password_file):
+        if time.monotonic() < self.next_attempt:
+            return None
+        try:
+            if self.client is None:
+                password = Path(password_file).read_text().strip()
+                self.client = websocket.create_connection(
+                    'ws://127.0.0.1:28016/' + password, timeout=3,
+                    http_no_proxy=['127.0.0.1'])
+            identifier = self.identifier
+            self.identifier += 2
+            result = rcon_query(self.client, identifier)
+            if not isinstance(result['serverinfo'], dict) or not isinstance(result['playerlist'], list):
+                raise ValueError('Unexpected RCON response shape')
+            self.error = None
+            return result
+        except Exception as error:
+            category = type(error).__name__
+            if category != self.error:
+                logging.warning('Local RCON unavailable (%s); retry in 60 seconds', category)
+            self.error = category
+            if self.client is not None:
+                try:
+                    self.client.close()
+                except Exception:
+                    pass
+            self.client = None
+            self.next_attempt = time.monotonic() + 60
+            return None
 
 
 def public_players(rows, show_names):
@@ -124,6 +171,7 @@ class Collector:
         self.game = {}
         self.previous_io = None
         self.rcon_error = None
+        self.rcon_session = RconSession()
 
     def collect(self):
         now = time.time()
@@ -158,7 +206,9 @@ class Collector:
             host['wifi_dbm'] = None
         service = unit_status()
         try:
-            reply = rcon(Path(self.config['password_file']).read_text().strip())
+            reply = self.rcon_session.poll(self.config['password_file'])
+            if reply is None:
+                raise RconUnavailable()
             rows = reply['playerlist']
             info = reply['serverinfo']
             current_ids = {str(row.get('SteamID')): str(row.get('DisplayName', 'Player'))[:80] for row in rows}
@@ -176,8 +226,8 @@ class Collector:
                          'uptime_seconds': info.get('Uptime'), 'world_size': info.get('WorldSize')}
         except Exception as error:
             # Do not log errors containing the RCON URL/password or player addresses.
-            category = type(error).__name__
-            if category != self.rcon_error:
+            category = self.rcon_session.error if isinstance(error, RconUnavailable) else type(error).__name__
+            if category != self.rcon_error and not isinstance(error, RconUnavailable):
                 logging.warning('Local RCON unavailable (%s)', category)
             self.rcon_error = category
             self.previous_ids = None
