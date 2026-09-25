@@ -18,6 +18,9 @@ rust_plus_enabled: false  # Enable after WAN routing and TCP forwarding are veri
 rust_plus_port: 28083
 rust_manage_firewall: false  # Optional UFW; see README before enabling.
 rust_ssh_port: 22
+rust_ssh_allowed_networks:
+  - 192.168.1.0/24
+  - 192.168.5.0/24
 rust_client_cidr: "192.168.0.0/16"
 # This directory must be on a separately mounted NAS filesystem.
 rust_backup_destination: /mnt/nas/rust-backups

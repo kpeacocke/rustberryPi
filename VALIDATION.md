@@ -83,3 +83,23 @@ management and a local TCP-listener check. Both enabled and disabled service uni
 were rendered through Ansible in check mode and their companion arguments verified.
 Deployment syntax and production lint passed. Router forwarding, live companion
 registration and phone pairing remain to be verified on the user's network.
+
+## Public-host security baseline — 2026-09-25
+
+Added a security-only playbook and public inventory profile. It installs UFW,
+allows SSH only from the two management LANs, exposes the configured game/query
+and companion ports, denies other unsolicited incoming and routed traffic, keeps
+outbound access, and validates SSH configuration before disabling root and empty
+password login. Ordinary user password login is preserved pending key verification.
+
+Validated in an isolated Debian 13 Docker container with its own network namespace
+and NET_ADMIN capability (not host networking). The actual security playbook
+completed first run with `ok=22 changed=9 failed=0`; the repeat run returned
+`ok=21 changed=0 failed=0`. UFW reported active, incoming/routed deny and outgoing
+allow, with LAN-only SSH, UDP 28015/28017 and TCP 28083. Effective sshd configuration
+reported root login disabled, empty passwords disabled, normal password login
+unchanged. No Pi settings were changed by this local test. Runtime packet flow and
+new SSH access on the Pi must still be verified after deployment.
+
+All five playbooks passed syntax checks, production lint passed and 38 helper tests
+passed, including allowed/disallowed management peers and mismatched SSH ports.

@@ -1,0 +1,9 @@
+---
+# Copy into inventory/host_vars/pidesktop/public-server.yml before deployment.
+rust_manage_firewall: true
+rust_client_cidr: 0.0.0.0/0
+rust_plus_enabled: true
+rust_plus_port: 28083
+rust_ssh_allowed_networks:
+  - 192.168.1.0/24
+  - 192.168.5.0/24

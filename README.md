@@ -208,12 +208,15 @@ does not repair a crashed server.
 Join from a client with `connect PI_ADDRESS:28015`. Confirm four-player capacity,
 save/restart behavior, CPU temperature, memory and playability before relying on it.
 
-Default firewall management is off to preserve the Pi's other jobs. Permit UDP
-28015 and 28017 in the existing host/LAN firewall. If explicitly enabling
-`rust_manage_firewall`, this project installs UFW, allows the configured SSH port,
-allows the two UDP ports from `rust_client_cidr` and enables incoming deny policy.
-Review existing UFW/nftables rules and other services before enabling it. Rules
-already present are preserved, so inspect actual exposure. Router forwarding and
+Default firewall management is off until explicitly configured. Permit UDP
+28015 and 28017 in the existing host/LAN firewall. When `rust_manage_firewall` is
+enabled, the security role installs UFW, allows SSH only from
+`rust_ssh_allowed_networks`, allows the two UDP ports from `rust_client_cidr`,
+and enables incoming/routed deny with outbound allow. It also disables direct root
+and empty-password SSH login. Review existing rules before enabling it: the old
+unrestricted SSH rule is removed, but unrelated existing rules are preserved.
+Inspect the printed effective rules rather than assuming default-deny removes
+previous allowances. Router forwarding and
 Internet access are not configured. RCON is loopback-only and Rust+ is disabled by default;
 do not forward TCP 28016.
 
@@ -240,8 +243,8 @@ port from any source while Rust+ is enabled and removes that allowance when disa
 Otherwise allow that TCP port in the existing host firewall if one is active.
 Changing the companion port requires removing any old forwarding/firewall rule.
 Router configuration and NetworkManager DNS settings remain operator-managed.
-Do not enable UFW just to add Rust+: that also applies the role's existing incoming
-deny policy to other services.
+Enabling UFW also applies the incoming-deny policy to other services; the public
+profile below is intended for a Pi accepting only SSH and Rust/Rust+ connections.
 
 Validation checks the local companion TCP listener after game readiness, but cannot
 prove WAN forwarding or app pairing. Check the current startup journal for companion
@@ -249,6 +252,49 @@ connectivity errors, then pair from Rust's in-game Rust+ menu and verify the pho
 app over mobile data. Keep `companion.id` in the identity directory: it is covered
 by the existing data backup. Disable by setting `rust_plus_enabled: false` and
 rerunning; pairing identity is preserved.
+
+### Secure the public Pi
+
+For this Pi, management LANs are `192.168.1.0/24` and `192.168.5.0/24`.
+The public profile opens UDP 28015/28017 and TCP 28083, and restricts TCP 22 to
+those LANs. UFW filters both IPv4 and IPv6; gameplay is permitted over IPv4 by
+this profile. Return traffic, loopback and UFW's standard infrastructure allowances
+(for example DHCP and necessary ICMP) remain available. No RCON port is opened.
+The Pi is not used as a router: forwarded traffic is denied.
+
+```sh
+cd ~/rustberryPi
+source .venv/bin/activate
+git pull --ff-only
+ansible-galaxy collection install -r requirements.yml
+mkdir -p inventory/host_vars/pidesktop
+cp -n inventory/public-server.example.yml inventory/host_vars/pidesktop/public-server.yml
+ansible-playbook playbooks/secure.yml --limit pidesktop --connection local \
+  --ask-become-pass -e ansible_python_interpreter=/usr/bin/python3
+sudo ufw status verbose
+```
+
+If the profile file already exists, inspect it: `cp -n` deliberately preserves it.
+Existing host variables override group defaults. `secure.yml` needs
+`rust_manage_firewall: true`; it skips the role if this is false. The normal Rust
+playbook also converges this security role once opted in. The security-only play
+does not update, start or restart Rust. It does not enable a Rust+ listener by
+itself: run the full play if you have not yet enabled that service option.
+
+Run while connected from one of the allowed LANs, keep the session open, then test
+a **second SSH session** before closing the first. The role validates the current
+SSH peer when available and refuses to exclude it. A local console has no SSH peer;
+in that case verify the allowlist yourself. It validates sshd configuration before
+reloading and installs SSH allowances before enabling UFW. Non-root password login
+is left unchanged until key access has been verified. Do not forward SSH/RCON on
+the DrayTek. External players and Rust+ should be tested from another network.
+
+This is a host firewall and SSH baseline, not protection against every game bug or
+an attack saturating the NBN connection. Rust already runs as an unprivileged user
+with no-new-privileges and systemd filesystem protections. Avoid arbitrary plugins,
+keep backups off the Pi, and install OS security updates during maintenance with
+`sudo apt update` then `sudo apt upgrade`. Kernel updates may need a reboot and a
+4096-byte page-size check. Automated OS upgrades/reboots are not introduced here.
 
 ## NAS backup and restore
 

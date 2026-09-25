@@ -30,6 +30,28 @@ steam = load('steam', 'roles/rust_server/files/steam_manage.py')
 backup = load('backup', 'roles/rust_backup/files/backup.py')
 health = load('health', 'roles/rust_server/files/health.py')
 service = load('service', 'roles/rust_server/files/service_state.py')
+firewall = load('firewall', 'roles/rust_security/files/preflight.py')
+
+
+class FirewallTests(unittest.TestCase):
+    def test_current_lan_session_allowed(self):
+        firewall.validate(['192.168.1.0/24', '192.168.5.0/24'], '192.168.5.20 53000 192.168.1.254 22', 22)
+
+    def test_console_allowed(self):
+        firewall.validate(['192.168.1.0/24'], '', 22)
+
+    def test_unlisted_peer_refused(self):
+        with self.assertRaisesRegex(ValueError, 'outside'):
+            firewall.validate(['192.168.1.0/24'], '192.168.5.20 53000 192.168.1.254 22', 22)
+
+    def test_wrong_ssh_port_refused(self):
+        with self.assertRaisesRegex(ValueError, 'different server port'):
+            firewall.validate(['192.168.1.0/24'], '192.168.1.20 53000 192.168.1.254 2222', 22)
+
+    def test_global_or_empty_allowlist_refused(self):
+        for networks in [[], ['0.0.0.0/0'], ['::/0'], ['8.8.8.0/24']]:
+            with self.subTest(networks=networks), self.assertRaises(ValueError):
+                firewall.validate(networks, '', 22)
 
 
 class ServiceTests(unittest.TestCase):

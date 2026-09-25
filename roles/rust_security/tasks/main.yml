@@ -1,0 +1,144 @@
+---
+- name: Require supported host and explicit firewall configuration
+  ansible.builtin.assert:
+    that:
+      - ansible_facts['distribution'] == 'Debian'
+      - ansible_facts['distribution_major_version'] == '13'
+      - rust_manage_firewall | bool
+      - rust_plus_port | int >= 10000
+      - rust_plus_port | int <= 65535
+      - rust_plus_port | int not in [22, 28015, 28016, 28017]
+      - rust_ssh_port | int not in [28015, 28016, 28017, rust_plus_port | int]
+      - ansible_user | default('kpeacocke') != 'root'
+
+- name: Prepare helper directory
+  ansible.builtin.file:
+    path: /usr/local/libexec/pi5-rust
+    state: directory
+    mode: '0755'
+
+- name: Install management access preflight
+  ansible.builtin.copy:
+    src: preflight.py
+    dest: /usr/local/libexec/pi5-rust/firewall_preflight.py
+    mode: '0644'
+
+- name: Check management networks and current SSH access before changes
+  ansible.builtin.command:
+    argv:
+      - python3
+      - /usr/local/libexec/pi5-rust/firewall_preflight.py
+      - "{{ rust_ssh_allowed_networks | to_json }}"
+      - >-
+        {{ lookup('ansible.builtin.env', 'SSH_CONNECTION') if ansible_connection | default('ssh') == 'local'
+           else ansible_facts['env'].get('SSH_CONNECTION', '') }}
+      - "{{ rust_ssh_port | string }}"
+  changed_when: false
+
+- name: Install host firewall and SSH server packages
+  ansible.builtin.apt:
+    name: [ufw, openssh-server]
+    state: present
+    update_cache: true
+    cache_valid_time: 86400
+
+- name: Inspect effective SSH configuration
+  ansible.builtin.command: /usr/sbin/sshd -T
+  register: rust_security_sshd
+  changed_when: false
+
+- name: Require configured firewall port to match SSH listener
+  ansible.builtin.assert:
+    that:
+      - "('port ' + (rust_ssh_port | string)) in rust_security_sshd.stdout_lines"
+    fail_msg: Set rust_ssh_port to the actual SSH listening port before enabling the firewall.
+
+- name: Disable direct root and empty-password SSH login
+  ansible.builtin.blockinfile:
+    path: /etc/ssh/sshd_config
+    insertbefore: BOF
+    marker: '# {mark} rustberryPi SSH baseline'
+    block: |
+      PermitRootLogin no
+      PermitEmptyPasswords no
+    backup: true
+    validate: /usr/sbin/sshd -t -f %s
+  notify: Reload SSH configuration
+
+- name: Filter IPv6 as well as IPv4
+  ansible.builtin.lineinfile:
+    path: /etc/default/ufw
+    regexp: '^IPV6='
+    line: IPV6=yes
+  notify: Reload UFW rules
+
+- name: Allow SSH from management networks before enabling the firewall
+  community.general.ufw:
+    rule: allow
+    port: "{{ rust_ssh_port | string }}"
+    proto: tcp
+    from_ip: "{{ item }}"
+    comment: RustberryPi LAN SSH
+  loop: "{{ rust_ssh_allowed_networks }}"
+
+- name: Remove the legacy unrestricted SSH rule from earlier versions
+  community.general.ufw:
+    rule: allow
+    port: "{{ rust_ssh_port | string }}"
+    proto: tcp
+    delete: true
+
+- name: Allow game and query traffic from selected clients
+  community.general.ufw:
+    rule: allow
+    port: "{{ item }}"
+    proto: udp
+    from_ip: "{{ rust_client_cidr }}"
+    comment: RustberryPi game and query
+  loop: ['28015', '28017']
+
+- name: Manage companion TCP access
+  community.general.ufw:
+    rule: allow
+    port: "{{ rust_plus_port | string }}"
+    proto: tcp
+    comment: RustberryPi companion
+    delete: "{{ not (rust_plus_enabled | bool) }}"
+
+- name: Allow outbound updates DNS and Steam traffic
+  community.general.ufw:
+    direction: outgoing
+    policy: allow
+
+- name: Deny forwarding through the Pi
+  community.general.ufw:
+    direction: routed
+    policy: deny
+
+- name: Enable low-volume firewall logging
+  community.general.ufw:
+    logging: low
+
+- name: Enable default incoming deny after allowances exist
+  community.general.ufw:
+    direction: incoming
+    policy: deny
+    state: enabled
+
+- name: Apply security configuration handlers
+  ansible.builtin.meta: flush_handlers
+
+- name: Read effective firewall status
+  ansible.builtin.command: ufw status verbose
+  register: rust_security_status
+  changed_when: false
+  environment:
+    LC_ALL: C
+
+- name: Require active firewall
+  ansible.builtin.assert:
+    that: "'Status: active' in rust_security_status.stdout"
+
+- name: Show effective firewall rules for review
+  ansible.builtin.debug:
+    var: rust_security_status.stdout_lines

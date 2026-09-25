@@ -100,7 +100,8 @@
     - Restart Rust
 
 - name: Configure optional firewall
-  ansible.builtin.include_tasks: firewall.yml
+  ansible.builtin.include_role:
+    name: rust_security
   when: rust_manage_firewall | bool
 
 - name: Flush necessary service restarts
