@@ -7,7 +7,7 @@
       - rust_telemetry_port | int <= 65535
       - rust_telemetry_port | int not in [28015, 28016, 28017, rust_plus_port | int]
       - ansible_facts['distribution'] == 'Debian'
-      - rust_telemetry_check_schedule is match('^[a-zA-Z0-9*,: /.-]+$')
+      - "rust_telemetry_check_schedule is match('^[a-zA-Z0-9*,: /.-]+$')"
 
 - name: Require persistent storage already mounted
   ansible.builtin.command: findmnt -n -o UUID --mountpoint /srv/rust
