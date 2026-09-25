@@ -22,7 +22,29 @@ inserted with textContent, including untrusted player names. No game or system
 control buttons are exposed. Navigation is touch-friendly and player addresses
 and Steam IDs are omitted from browser data.
 
-To autostart after desktop login, create a **private local** file
+To manage startup with Ansible, add these to your private host variables:
+
+```yaml
+rust_telemetry_enabled: true
+rust_telemetry_desktop_autostart: true
+rust_telemetry_desktop_user: your_desktop_login
+```
+
+Run `playbooks/telemetry.yml` (or the full `playbooks/rust.yml`). This installs
+Chromium and Xwayland and manages the selected user's
+`~/.config/autostart/rustberrypi.desktop`. The launcher waits for the local
+dashboard endpoint before opening the three windows, with a bounded timeout;
+it does not wait for Rust to finish starting. The configured telemetry port is
+passed automatically. Set autostart to false, keeping the desktop user specified,
+and rerun to remove the startup entry. Already open windows are left running.
+
+For unattended startup after reboot, enable desktop auto-login for that account
+in your Pi's desktop login settings. Ansible does not change login policy.
+Auto-login gives anyone with physical access that desktop session. Without it,
+the dashboards open when you log in. Keep the saved display layout matching the
+coordinates above. Actual placement still depends on your compositor.
+
+Alternatively, manually create a **private local** file
 `~/.config/autostart/rustberrypi.desktop`:
 
 ```ini

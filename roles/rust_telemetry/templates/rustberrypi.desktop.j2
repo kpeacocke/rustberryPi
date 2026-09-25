@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=RustberryPi displays
+Exec=env RUST_DASHBOARD_PORT={{ rust_telemetry_port | int }} sh /opt/rustberrypi/dashboard/launch.sh
+Terminal=false
+X-GNOME-Autostart-enabled=true

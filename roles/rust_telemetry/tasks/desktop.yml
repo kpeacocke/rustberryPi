@@ -1,0 +1,48 @@
+---
+- name: Require an explicit desktop account
+  ansible.builtin.assert:
+    that:
+      - rust_telemetry_desktop_user is match('^[a-z_][a-z0-9_-]*$')
+      - rust_telemetry_desktop_user not in ['root', 'rust', 'rust-telemetry']
+    fail_msg: Set rust_telemetry_desktop_user to your existing graphical desktop login.
+
+- name: Look up desktop account
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ rust_telemetry_desktop_user }}"
+
+- name: Require a regular desktop home
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.getent_passwd[rust_telemetry_desktop_user][4] is match('^/home/[^/]+$')
+
+- name: Install dashboard browser and Xwayland
+  ansible.builtin.apt:
+    name: [chromium, xwayland]
+    state: present
+  when: rust_telemetry_desktop_autostart | bool
+
+- name: Create desktop startup directories
+  ansible.builtin.file:
+    path: "{{ ansible_facts.getent_passwd[rust_telemetry_desktop_user][4] }}/{{ item }}"
+    state: directory
+    owner: "{{ rust_telemetry_desktop_user }}"
+    group: "{{ ansible_facts.getent_passwd[rust_telemetry_desktop_user][2] }}"
+    mode: '0700'
+  loop: [.config, .config/autostart]
+  when: rust_telemetry_desktop_autostart | bool
+
+- name: Install desktop startup entry
+  ansible.builtin.template:
+    src: rustberrypi.desktop.j2
+    dest: "{{ ansible_facts.getent_passwd[rust_telemetry_desktop_user][4] }}/.config/autostart/rustberrypi.desktop"
+    owner: "{{ rust_telemetry_desktop_user }}"
+    group: "{{ ansible_facts.getent_passwd[rust_telemetry_desktop_user][2] }}"
+    mode: '0644'
+  when: rust_telemetry_desktop_autostart | bool
+
+- name: Remove desktop startup entry when disabled
+  ansible.builtin.file:
+    path: "{{ ansible_facts.getent_passwd[rust_telemetry_desktop_user][4] }}/.config/autostart/rustberrypi.desktop"
+    state: absent
+  when: not rust_telemetry_desktop_autostart | bool

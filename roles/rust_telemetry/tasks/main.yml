@@ -81,6 +81,10 @@
     group: root
     mode: '0644'
 
+- name: Configure optional desktop startup
+  ansible.builtin.include_tasks: desktop.yml
+  when: rust_telemetry_desktop_user | length > 0 or rust_telemetry_desktop_autostart | bool
+
 - name: Generate a local RCON credential once
   ansible.builtin.command:
     argv:
