@@ -14,3 +14,7 @@ rust_manage_firewall: false
 rust_ssh_allowed_networks: []  # Fill in your trusted LAN/VPN networks before enabling.
 rust_plus_enabled: false
 # fex_existing_rootfs: /absolute/path/to/manual/Ubuntu_24_04
+
+# Optional local-only dashboards; first enablement restarts Rust for local RCON.
+rust_telemetry_enabled: false
+rust_telemetry_show_names: true

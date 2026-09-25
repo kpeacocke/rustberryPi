@@ -555,3 +555,15 @@ Enter only your own SteamID64 to make yourself the sole admin. Keep this setting
 in ignored private host vars or AWX; public examples never contain real IDs.
 Changing administrator rights triggers the same graceful stop/restart as player
 access changes. Reconnect after deployment to refresh your game authorization.
+
+## Optional three-screen dashboards
+
+The separate `dashboard/` and `telemetry/` directories provide local-only,
+read-only views for the game/player list, touchscreen overview, and Pi health /
+maintenance suggestions. See [deployment and security](telemetry/README.md) and
+[display setup](dashboard/README.md). Enable `rust_telemetry_enabled: true` in
+private host vars and run the full play, or deploy `playbooks/telemetry.yml` to an
+already configured server. Initial setup configures authenticated local RCON and
+restarts Rust once; subsequent unchanged deployment does not restart the game.
+No new public ports are opened. Update probes inspect available versions and
+refresh package indexes; they never install game or OS updates.

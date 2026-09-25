@@ -1,0 +1,12 @@
+---
+- name: Start game after telemetry configuration
+  ansible.builtin.command:
+    argv: [python3, /usr/local/libexec/pi5-rust/service_state.py, start]
+  changed_when: true
+  when: rust_start | bool
+
+- name: Restart telemetry
+  ansible.builtin.systemd_service:
+    name: rust-telemetry.service
+    daemon_reload: true
+    state: restarted

@@ -16,4 +16,6 @@
     - steamcmd
     - rust_server
     - rust_backup
+    - role: rust_telemetry
+      when: rust_telemetry_enabled | default(false) | bool
     - validation

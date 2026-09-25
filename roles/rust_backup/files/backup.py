@@ -4,6 +4,7 @@ import argparse
 from datetime import datetime, timezone
 import fcntl
 import hashlib
+import sys
 import json
 import os
 from pathlib import Path
@@ -104,6 +105,20 @@ def main():
                     print('Restored; previous state preserved at ' + str(previous))
                 finally:
                     shutil.rmtree(stage)
+            try:
+                # Durable evidence for the local dashboard; old backups remain unknown.
+                status_path = Path('/var/lib/rustberrypi-backup.json')
+                try:
+                    status = json.loads(status_path.read_text())
+                except (OSError, ValueError):
+                    status = {}
+                status[args.operation + '_success'] = datetime.now(timezone.utc).timestamp()
+                temporary_status = status_path.with_suffix('.tmp')
+                temporary_status.write_text(json.dumps(status))
+                temporary_status.chmod(0o644)
+                temporary_status.replace(status_path)
+            except OSError:
+                print('Backup operation succeeded but telemetry evidence could not be saved', file=sys.stderr)
             success = True
         finally:
             # Backup errors do not strand the game offline. Failed restore needs inspection.

@@ -1,0 +1,7 @@
+---
+rust_telemetry_port: 8090
+rust_telemetry_show_names: true
+rust_telemetry_check_schedule: '*-*-* 03,15:30:00'
+rust_telemetry_fex: "{{ fex_prefix | default('/usr') }}/bin/FEX"
+rust_telemetry_rootfs: "{{ fex_rootfs_path | default('/opt/fex/rootfs/ubuntu-24.04-2026-08-11') }}"
+rust_telemetry_fex_version: "{{ fex_version | default('FEX-2609-120-ge2f973fe9') }}"

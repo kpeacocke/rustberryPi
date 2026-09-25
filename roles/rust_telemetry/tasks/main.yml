@@ -1,0 +1,208 @@
+---
+- name: Validate telemetry configuration
+  ansible.builtin.assert:
+    that:
+      - rust_identity is match('^[a-zA-Z0-9_-]+$')
+      - rust_telemetry_port | int >= 1024
+      - rust_telemetry_port | int <= 65535
+      - rust_telemetry_port | int not in [28015, 28016, 28017, rust_plus_port | int]
+      - ansible_facts['distribution'] == 'Debian'
+      - rust_telemetry_check_schedule is match('^[a-zA-Z0-9*,: /.-]+$')
+
+- name: Require persistent storage already mounted
+  ansible.builtin.command: findmnt -n -o UUID --mountpoint /srv/rust
+  register: rust_telemetry_mount
+  changed_when: false
+  failed_when: rust_telemetry_mount.rc != 0 or rust_telemetry_mount.stdout | trim | length == 0
+
+- name: Require installed game service
+  ansible.builtin.stat:
+    path: /etc/systemd/system/rust.service
+  register: rust_telemetry_game
+
+- name: Require convergence before telemetry installation
+  ansible.builtin.assert:
+    that: rust_telemetry_game.stat.exists
+    fail_msg: Deploy rust.yml first; telemetry.yml adds monitoring to an existing deployment.
+
+- name: Install distro telemetry dependencies
+  ansible.builtin.apt:
+    name: [python3-psutil, python3-websocket, python3-apt]
+    state: present
+    update_cache: true
+    cache_valid_time: 86400
+
+- name: Create isolated telemetry group
+  ansible.builtin.group:
+    name: rust-telemetry
+    system: true
+
+- name: Create isolated telemetry account
+  ansible.builtin.user:
+    name: rust-telemetry
+    group: rust-telemetry
+    system: true
+    create_home: false
+    shell: /usr/sbin/nologin
+    password_lock: true
+
+- name: Create installation directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  loop: [/opt/rustberrypi/telemetry, /opt/rustberrypi/dashboard, /var/lib/rustberrypi]
+
+- name: Create protected configuration directory
+  ansible.builtin.file:
+    path: /etc/rustberrypi
+    state: directory
+    owner: root
+    group: rust-telemetry
+    mode: '0750'
+
+- name: Install telemetry source
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../telemetry/{{ item }}"
+    dest: /opt/rustberrypi/telemetry/
+    owner: root
+    group: root
+    mode: '0644'
+  loop: [server.py, maintenance.py]
+  notify: Restart telemetry
+
+- name: Install dashboard assets
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../dashboard/"
+    dest: /opt/rustberrypi/dashboard/
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Generate a local RCON credential once
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -c
+      - >-
+        import os,secrets;
+        fd=os.open('/etc/rustberrypi/rcon-password',os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600);
+        os.write(fd,secrets.token_hex(32).encode()); os.close(fd)
+    creates: /etc/rustberrypi/rcon-password
+  no_log: true
+
+- name: Limit credential access to collector and root
+  ansible.builtin.file:
+    path: /etc/rustberrypi/rcon-password
+    owner: root
+    group: rust-telemetry
+    mode: '0640'
+
+- name: Read generated credential privately
+  ansible.builtin.slurp:
+    src: /etc/rustberrypi/rcon-password
+  register: rust_telemetry_secret
+  no_log: true
+
+- name: Validate credential for Rust configuration
+  ansible.builtin.assert:
+    that: (rust_telemetry_secret.content | b64decode) is match('^[a-f0-9]{64}$')
+  no_log: true
+
+- name: Create persistent game configuration directory
+  ansible.builtin.file:
+    path: "/srv/rust/data/{{ rust_identity }}/cfg"
+    state: directory
+    owner: rust
+    group: rust
+    mode: '0750'
+
+- name: Plan local RCON configuration without writing while Rust runs
+  ansible.builtin.blockinfile:
+    path: "/srv/rust/data/{{ rust_identity }}/cfg/server.cfg"
+    create: true
+    owner: rust
+    group: rust
+    mode: '0600'
+    marker: '// {mark} rustberryPi local telemetry'
+    block: |
+      rcon.ip 127.0.0.1
+      rcon.port 28016
+      rcon.web 1
+      rcon.password "{{ rust_telemetry_secret.content | b64decode }}"
+  check_mode: true
+  register: rust_telemetry_plan
+  no_log: true
+
+- name: Stop game gracefully only when RCON configuration changes
+  ansible.builtin.command:
+    argv: [python3, /usr/local/libexec/pi5-rust/service_state.py, stop]
+  register: rust_telemetry_stop
+  changed_when: rust_telemetry_stop.stdout == 'changed'
+  when: rust_telemetry_plan.changed  # noqa: no-handler -- Must stop before writing, not at deferred handler time.
+
+- name: Enable authenticated loopback RCON for fixed telemetry commands
+  ansible.builtin.blockinfile:
+    path: "/srv/rust/data/{{ rust_identity }}/cfg/server.cfg"
+    create: true
+    owner: rust
+    group: rust
+    mode: '0600'
+    marker: '// {mark} rustberryPi local telemetry'
+    block: |
+      rcon.ip 127.0.0.1
+      rcon.port 28016
+      rcon.web 1
+      rcon.password "{{ rust_telemetry_secret.content | b64decode }}"
+  notify: Start game after telemetry configuration
+  no_log: true
+
+- name: Configure collector and maintenance probe
+  ansible.builtin.copy:
+    content: >-
+      {{ {'port': rust_telemetry_port | int, 'show_names': rust_telemetry_show_names | bool,
+          'password_file': '/etc/rustberrypi/rcon-password', 'assets': '/opt/rustberrypi/dashboard',
+          'companion_port': rust_plus_port | int, 'storage_uuid': rust_telemetry_mount.stdout | trim,
+          'fex': rust_telemetry_fex, 'rootfs': rust_telemetry_rootfs,
+          'fex_version': rust_telemetry_fex_version} | to_nice_json }}
+    dest: /etc/rustberrypi/telemetry.json
+    owner: root
+    group: rust-telemetry
+    mode: '0640'
+  notify: Restart telemetry
+
+- name: Install telemetry service units
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/etc/systemd/system/{{ item }}"
+    mode: '0644'
+  loop: [rust-telemetry.service, rust-maintenance-check.service, rust-maintenance-check.timer]
+  register: rust_telemetry_units
+  notify: Restart telemetry
+
+- name: Enable local telemetry service
+  ansible.builtin.systemd_service:
+    name: rust-telemetry.service
+    daemon_reload: "{{ rust_telemetry_units.changed }}"
+    enabled: true
+    state: started
+
+- name: Enable periodic maintenance checks
+  ansible.builtin.systemd_service:
+    name: rust-maintenance-check.timer
+    enabled: true
+    state: started
+
+- name: Apply pending telemetry changes
+  ansible.builtin.meta: flush_handlers
+
+- name: Verify local dashboard HTTP endpoint
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ rust_telemetry_port }}/api/status"
+    status_code: 200
+  register: rust_telemetry_http
+  retries: 10
+  delay: 2
+  until: rust_telemetry_http.status == 200

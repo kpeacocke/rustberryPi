@@ -135,3 +135,22 @@ All 53 helper tests passed, including admin grants, owner/moderator revocation,
 ban preservation, unchanged-run idempotence, persistence across unattended runs,
 and rejection of administrators outside the restricted player list. Live game
 administrator authorization still requires deployment and a reconnect on the Pi.
+
+## Local telemetry and three-display dashboards
+
+63 helper tests passed, covering player-data projection (no Steam IDs/IPs),
+fixed read-only RCON commands, HTTP Host validation, rejection of mutation and
+path traversal requests, missing sensor data, stale update checks, current versus
+historical undervoltage, APT index-only checks, Steam app-info-only probes and
+mount mismatch refusal. Backup helpers continue to pass their existing tests.
+
+Headless Chromium-based browser checks used synthetic, explicitly local test data
+at 1280x720 for the touch view and 1920x1080 for both HDMI views. All three fitted
+the viewport without document overflow; no JavaScript errors occurred. A player
+name containing HTML rendered as text, and the missing/stale telemetry state was
+checked. Synthetic data is not shipped in the dashboard or live collector.
+
+These checks do not validate live Raspberry Pi sensor permissions, installed-game
+RCON response schemas, graphical compositor placement, display overhead or a full
+Ansible deployment on the Pi. The dashboard HTTP health check alone does not prove
+game readiness. Live acceptance is documented in telemetry/README.md.
