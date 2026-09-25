@@ -37,10 +37,53 @@
   changed_when: false
   failed_when: rust_storage_mount.stdout != rust_storage_verified_uuid
 
+- name: Inspect existing Rust account
+  ansible.builtin.getent:
+    database: passwd
+    key: rust
+    fail_key: false
+
+- name: Inspect existing Rust group
+  ansible.builtin.getent:
+    database: group
+    key: rust
+    fail_key: false
+
+- name: Inspect persistent ownership before creating accounts
+  ansible.builtin.stat:
+    path: /srv/rust/home
+    follow: false
+  register: rust_storage_home
+
+- name: Select stable GID from explicit setting or existing account and disk
+  ansible.builtin.set_fact:
+    rust_storage_gid: >-
+      {{ rust_gid | default(ansible_facts.getent_group['rust'][1]
+         if ansible_facts.getent_group['rust'] else
+         (rust_storage_home.stat.gid if rust_storage_home.stat.exists else rust_uid)) | int }}
+
+- name: Refuse implicit ownership migrations
+  ansible.builtin.assert:
+    that:
+      - rust_uid | int >= 1000
+      - rust_storage_gid | int >= 1000
+      - not ansible_facts.getent_passwd['rust'] or ansible_facts.getent_passwd['rust'][1] | int == rust_uid | int
+      - not ansible_facts.getent_group['rust'] or ansible_facts.getent_group['rust'][1] | int == rust_storage_gid | int
+      - not rust_storage_home.stat.exists or rust_storage_home.stat.uid == rust_uid | int
+      - not rust_storage_home.stat.exists or rust_storage_home.stat.gid == rust_storage_gid | int
+    fail_msg: Existing account or USB ownership differs. Preserve its numeric UID/GID in private vars; do not recursively chown blindly.
+
+- name: Create stable Rust group
+  ansible.builtin.group:
+    name: rust
+    gid: "{{ rust_storage_gid }}"
+
 - name: Create stable Rust account
   ansible.builtin.user:
     name: rust
     uid: "{{ rust_uid }}"
+    group: rust
+    password_lock: true
     home: /srv/rust/home
     create_home: false
     shell: /usr/sbin/nologin

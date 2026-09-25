@@ -13,3 +13,9 @@ inventory/group_vars/rust_servers/local.yml
 .env
 .DS_Store
 !roles/fex/files/rootfs-manifest.json.gz
+
+# Never publish authentication material.
+*.pem
+*.key
+id_ed25519*
+id_rsa*

@@ -4,5 +4,5 @@ fex_version: FEX-2609-120-ge2f973fe9
 fex_rootfs_sha256: 2854b06d3ff1b8f6e526135bfb6dd5b7b30ab3ab73e79ae933a3d9fed959a178
 fex_rootfs_url: https://rootfs.fex-emu.gg/Ubuntu_24_04/2026-08-11/Ubuntu_24_04.sqsh
 fex_rootfs_path: /opt/fex/rootfs/ubuntu-24.04-2026-08-11
-fex_existing_rootfs: /home/kpeacocke/.fex-emu/RootFS/Ubuntu_24_04
+fex_existing_rootfs: /nonexistent  # Override to adopt a manual extraction.
 fex_cleanup_tmp: false

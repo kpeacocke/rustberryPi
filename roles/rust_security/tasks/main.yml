@@ -9,7 +9,7 @@
       - rust_plus_port | int <= 65535
       - rust_plus_port | int not in [22, 28015, 28016, 28017]
       - rust_ssh_port | int not in [28015, 28016, 28017, rust_plus_port | int]
-      - ansible_user | default('kpeacocke') != 'root'
+      - ansible_user | default('') != 'root'
 
 - name: Prepare helper directory
   ansible.builtin.file:

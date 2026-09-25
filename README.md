@@ -1,11 +1,11 @@
-# KP's Pi 5 Rust server
+# rustberryPi — Raspberry Pi 5 Rust server
 
 Ansible for one specific experiment: a Raspberry Pi 5, 16 GB RAM, Debian 13
 Trixie arm64, 4 KB Raspberry Pi kernel, FEX and a vanilla four-player Rust server.
 The OS lives on microSD; the ext4 USB labelled `RUSTSERVER` holds `/srv/rust`.
 No plugins, containers, game-server framework or scheduled game updates.
 
-**The core PoC has been demonstrated on KP's Pi:** deployment and readiness passed,
+**The core PoC has been demonstrated on a Raspberry Pi 5:** deployment and readiness passed,
 an unchanged second run reported zero changes, and a player joined successfully.
 Startup after reboot also succeeded; the supplied log reported 216.30 seconds for
 bootstrap. Sustained performance, saved-state recovery and NAS backup/restore still
@@ -15,13 +15,13 @@ require the hardware acceptance procedure below.
 
 | Component | Desired state |
 | --- | --- |
-| Host | `PiDesktop.local`, SSH user `kpeacocke` (edit inventory if needed) |
+| Host | `raspberrypi.example.invalid`, SSH user `piadmin` (edit inventory if needed) |
 | Kernel | `/boot/firmware/kernel8.img`; require `getconf PAGESIZE` = `4096` |
 | Observed kernel | `6.18.50+rpt-rpi-v8`; ABI version is not frozen |
 | FEX | `e2f973fe931e6dc2ce523795e51ca1ac3ca85816` / `FEX-2609-120-ge2f973fe9` |
 | RootFS | FEX Ubuntu 24.04, image dated 2026-08-11; Ubuntu 24.04.4 userspace |
 | Steam app | `258550`, public branch, anonymous login |
-| World | identity `kp-pi5`, procedural size `1500`, seed `12345`, four players |
+| World | identity `rustberry`, procedural size `1500`, seed `12345`, four players |
 | Network | UDP 28015 game, UDP 28017 query; RCON loopback TCP 28016; Rust+ optional TCP 28083 |
 
 RootFS SHA256:
@@ -43,8 +43,12 @@ python3 -m venv .venv
 . .venv/bin/activate
 pip install -r requirements-dev.txt
 ansible-galaxy collection install -r requirements.yml
+cp -n inventory/hosts.yml inventory/hosts.local.yml
+mkdir -p inventory/host_vars/rustpi
+cp -n inventory/server.example.yml inventory/host_vars/rustpi/settings.yml
+# Edit both private files before connecting.
 ansible-inventory --graph
-ssh kpeacocke@PiDesktop.local
+ssh piadmin@raspberrypi.example.invalid
 ```
 
 Establish and verify the SSH host key interactively first. Configure sudo on the
@@ -54,24 +58,24 @@ Python 3 and sudo, and Raspberry Pi firmware/kernel packages supplying
 `/boot/firmware/kernel8.img`. It must be the equivalent Pi-supported Debian image,
 not a generic ARM image with a different boot layout.
 
-Edit `inventory/hosts.yml` and `inventory/group_vars/rust_servers.yml`. Local
-overrides can go in ignored `inventory/host_vars/pidesktop.yml`. Discover the
+Edit ignored `inventory/hosts.local.yml`; set deployment overrides in ignored
+`inventory/host_vars/rustpi/settings.yml`. Set `rust_identity` explicitly (for example
+`rustberry` on a NEW server); preserve the old value on an existing server. Discover the
 USB UUID with `lsblk -f` and set `rust_storage_uuid` for stronger identification.
-No network address or NAS credentials beyond the conversation's host example are
-assumed. Inventory settings apply to both existing and fresh hosts.
+The tracked addresses and usernames are placeholders; supply your own values. Inventory settings apply to both existing and fresh hosts.
 
 ## Converge the current Pi
 
 Read-only preflight:
 
 ```sh
-ansible pidesktop -m ansible.builtin.ping
-ansible pidesktop -b -m ansible.builtin.command -a 'getconf PAGESIZE'
-ansible pidesktop -b -m ansible.builtin.command -a 'lsblk -f'
-ansible pidesktop -b -m ansible.builtin.command -a '/usr/bin/FEXGetConfig --version'
+ansible rustpi -m ansible.builtin.ping
+ansible rustpi -b -m ansible.builtin.command -a 'getconf PAGESIZE'
+ansible rustpi -b -m ansible.builtin.command -a 'lsblk -f'
+ansible rustpi -b -m ansible.builtin.command -a '/usr/bin/FEXGetConfig --version'
 ansible-playbook playbooks/rust.yml --syntax-check
-ansible-playbook playbooks/rust.yml --limit pidesktop --diff
-ansible-playbook playbooks/rust.yml --limit pidesktop --diff
+ansible-playbook playbooks/rust.yml --limit rustpi --diff
+ansible-playbook playbooks/rust.yml --limit rustpi --diff
 ```
 
 Expect `changed=0` on the second run while settings, packages and runtime state
@@ -103,10 +107,9 @@ SteamCMD → Rust/service/firewall → backup hooks → A2S game readiness. A sm
   version is preserved and the exact source/submodules are built with Clang, Qt5
   and QtQml into `/opt/fex/<commit>`. Service configuration selects that path.
 - The RootFS manifest checks every expected directory, symlink and file digest.
-  A matching manual extraction at
-  `/home/kpeacocke/.fex-emu/RootFS/Ubuntu_24_04` is copied into the managed versioned
-  location, preserving the original. Set `fex_existing_rootfs` if its actual name
-  differs. This avoids granting the service access through a private home directory.
+  A matching manual extraction specified by `fex_existing_rootfs` is copied into
+  the managed versioned location, preserving the original. The default does not
+  search personal home directories. This avoids granting the service access through a private home directory.
   Otherwise the checksum-pinned image is extracted to staging and verified before
   activation. A corrupt existing managed tree fails for review without deletion;
   select a new versioned `fex_rootfs_path` to repair it while retaining the old tree.
@@ -130,7 +133,7 @@ Normal rebuilds **never format**. For a newly partitioned USB only, inspect
 `lsblk -f` and use a stable `/dev/disk/by-id/...-part1` path:
 
 ```sh
-ansible-playbook playbooks/bootstrap.yml --limit pidesktop \
+ansible-playbook playbooks/bootstrap.yml --limit rustpi \
   -e rust_storage_initialise=true \
   -e rust_storage_device=/dev/disk/by-id/REPLACE_WITH_USB_ID-part1
 ```
@@ -152,7 +155,7 @@ outside v1.
     server -> /srv/rust/data
   data/
     deployment.json         # identity, world parameters, UID and emulator pins
-    kp-pi5/                 # worlds, players, cfg, bans, owners, etc.
+    rustberry/                 # worlds, players, cfg, bans, owners, etc.
 ```
 
 The service requires the mount and verifies its UUID before every start. The
@@ -178,9 +181,9 @@ the symlink. Never overlay two different worlds by guessing which wins.
 ## Updates, service and network
 
 ```sh
-ansible-playbook playbooks/rust.yml --limit pidesktop -e rust_update=true
-ssh kpeacocke@PiDesktop.local 'sudo systemctl status rust'
-ssh kpeacocke@PiDesktop.local 'sudo journalctl -u rust -n 100 --no-pager'
+ansible-playbook playbooks/rust.yml --limit rustpi -e rust_update=true
+ssh piadmin@raspberrypi.example.invalid 'sudo systemctl status rust'
+ssh piadmin@raspberrypi.example.invalid 'sudo journalctl -u rust -n 100 --no-pager'
 ```
 
 An explicit update fetches Steam's public build ID. If it matches, the server is
@@ -228,15 +231,15 @@ failed server: check subsequent Steam initialization/connection, readiness and
 client joins. Repeated warnings during play or connection failures need separate
 investigation; logs are not filtered or suppressed.
 
-### Enable Rust+ through WAN2/NBN
+### Enable Rust+ through your public WAN
 
 Set `rust_plus_enabled: true` in an ignored host-variable file under
-`inventory/host_vars/pidesktop/`. The default `rust_plus_port` is TCP 28083.
-Reserve the Pi's LAN address and route its outbound IPv4 traffic through WAN2 on
-the DrayTek. Verify `curl -4 https://api.ipify.org` matches WAN2's current address.
-Forward **WAN2 TCP 28083 to the Pi TCP 28083**, then rerun the normal playbook.
+`inventory/host_vars/rustpi/`. The default `rust_plus_port` is TCP 28083.
+Reserve the Pi's LAN address and route its outbound IPv4 traffic through the same
+public WAN used for forwarding. Verify `curl -4 https://api.ipify.org` matches that
+WAN's current address. Forward **TCP 28083 to the Pi TCP 28083**, then rerun the normal playbook.
 This changes the service and restarts the game. No public IP is hardcoded into the
-repository; correct outbound routing lets Rust discover the NBN public address.
+repository; correct outbound routing lets Rust discover the public address.
 
 If `rust_manage_firewall` is already enabled, the role allows the companion TCP
 port from any source while Rust+ is enabled and removes that allowance when disabled.
@@ -266,7 +269,8 @@ rerunning; pairing identity is preserved.
 
 ### Secure the public Pi
 
-For this Pi, management LANs are `192.168.1.0/24` and `192.168.5.0/24`.
+The example management LANs are placeholders. Replace them with your trusted
+LAN/VPN networks, including the AWX execution host source address.
 The public profile opens UDP 28015/28017 and TCP 28083, and restricts TCP 22 to
 those LANs. UFW filters both IPv4 and IPv6; gameplay is permitted over IPv4 by
 this profile. Return traffic, loopback and UFW's standard infrastructure allowances
@@ -278,9 +282,9 @@ cd ~/rustberryPi
 source .venv/bin/activate
 git pull --ff-only
 ansible-galaxy collection install -r requirements.yml
-mkdir -p inventory/host_vars/pidesktop
-cp -n inventory/public-server.example.yml inventory/host_vars/pidesktop/public-server.yml
-ansible-playbook playbooks/secure.yml --limit pidesktop --connection local \
+mkdir -p inventory/host_vars/rustpi
+cp -n inventory/public-server.example.yml inventory/host_vars/rustpi/public-server.yml
+ansible-playbook playbooks/secure.yml --limit rustpi --connection local \
   --ask-become-pass -e ansible_python_interpreter=/usr/bin/python3
 sudo ufw status verbose
 ```
@@ -298,10 +302,10 @@ SSH peer when available and refuses to exclude it. A local console has no SSH pe
 in that case verify the allowlist yourself. It validates sshd configuration before
 reloading and installs SSH allowances before enabling UFW. Non-root password login
 is left unchanged until key access has been verified. Do not forward SSH/RCON on
-the DrayTek. External players and Rust+ should be tested from another network.
+your router. External players and Rust+ should be tested from another network.
 
 This is a host firewall and SSH baseline, not protection against every game bug or
-an attack saturating the NBN connection. Rust already runs as an unprivileged user
+an attack saturating the internet connection. Rust already runs as an unprivileged user
 with no-new-privileges and systemd filesystem protections. Avoid arbitrary plugins,
 keep backups off the Pi, and install OS security updates during maintenance with
 `sudo apt update` then `sudo apt upgrade`. Kernel updates may need a reboot and a
@@ -316,7 +320,7 @@ paths. The helper requires a real, separate mount and a destination beneath it;
 it refuses to quietly write backups to microSD when the NAS is absent.
 
 ```sh
-ansible-playbook playbooks/backup.yml --limit pidesktop
+ansible-playbook playbooks/backup.yml --limit rustpi
 ```
 
 The one-shot service locks against updates/restores, stops Rust gracefully, verifies
@@ -389,3 +393,82 @@ Review SteamCMD bootstrap checksum changes rather than disabling verification.
 - [FEX RootFS image](https://rootfs.fex-emu.gg/Ubuntu_24_04/2026-08-11/Ubuntu_24_04.sqsh)
 - [Facepunch server setup and ports](https://wiki.facepunch.com/rust/Creating-a-server)
 - [Valve SteamCMD](https://developer.valvesoftware.com/wiki/SteamCMD)
+
+## Accounts and AWX
+
+`rust` is the non-login, password-locked game account. It owns the persistent game
+layout and has no sudo grant from this project. Keep `rust_uid` stable. Optional
+`rust_gid` pins the group explicitly; otherwise the role adopts the current Rust
+group or the persistent home directory GID, falling back to `rust_uid` on a fresh
+disk. Existing UID/GID mismatches stop deployment rather than rewriting ownership.
+A conflicting numeric ID used by another account must be resolved by the operator.
+Back up private inventory as well as game state before reimaging.
+
+Your personal administrator account and Raspberry Pi Connect remain separate.
+The automation account is opt-in and has root-equivalent sudo. It uses public-key
+SSH only; it does not own the game. Provision it using your existing administrator:
+
+1. Generate a dedicated SSH key on your controller, or obtain your AWX public key.
+   Keep its private key outside this repository, including ignored files.
+2. Copy `inventory/automation.example.yml` to your ignored host-vars directory.
+   Add the public key to `automation_account_public_keys`; the empty list fails
+   before creating anything. Review the explicit passwordless-sudo setting.
+3. Run `ansible-playbook playbooks/accounts.yml --ask-become-pass` with your current
+   inventory. This does not update or restart Rust.
+4. Keep the current session open. Test a new SSH connection using the dedicated key
+   and `sudo -n true`. The management firewall must allow the controller/execution
+   node's actual source address over your LAN or VPN.
+5. In AWX, create a Machine Credential with username `ansible`, that private key,
+   privilege escalation method `sudo` and escalation user `root`. Configure the
+   inventory host's real address and variables, and set `ansible_user: ansible`
+   (a personal username in inventory overrides the credential's username).
+   Use `playbooks/rust.yml` and install this repository's pinned requirements in
+   the execution environment. Verify SSH host keys; do not disable checking.
+
+The account key list is authoritative: keep both keys in the list during rotation,
+test the new key, then remove the old key. Disabling the role or changing the
+account name does **not** revoke a previously provisioned account. Revoke its keys
+and sudo grant explicitly when retiring it. The role refuses to repurpose an
+existing account unless it carries this project's automation account marker.
+
+AWX can supply variables directly; it does not need your local inventory file.
+Do not put private keys, passwords, NAS credentials, public IPs or personal
+inventory into the public project. Keep operational inventory in AWX or a separate
+private repository, and use Vault or AWX credentials for secrets.
+
+## Migrating from the original personal inventory
+
+Before pulling this update, preserve your tracked inventory and group variables
+outside the checkout. After pulling, the generic inventory deliberately cannot
+connect anywhere: `ansible.cfg` now uses ignored `inventory/hosts.local.yml`.
+The old host alias must remain unchanged so existing host vars still apply.
+
+If you pulled directly from an earlier version, run:
+
+```sh
+python tools/migrate_inventory.py --ref ORIG_HEAD
+ansible-inventory --graph
+```
+
+This reads the pre-pull commit, writes ignored local inventory and per-host
+settings without overwriting existing files, and preserves the world identity,
+UID, network settings and manual RootFS adoption path. Inspect the private results
+before deploying. If `ORIG_HEAD` is not the intended old version, supply its commit
+ID instead. This helper is for existing installations, not new deployments.
+Existing `host_vars/<alias>.yml` must first be moved into a `<alias>/` directory
+as `settings.yml` so both old overrides and the migration file can load.
+
+New users copy `inventory/hosts.yml` to `inventory/hosts.local.yml`, replace its
+placeholder address/user, and set a nonempty `rust_identity` in ignored host vars.
+For the firewall, explicitly supply trusted management networks. The example
+subnets are documentation values, not inferred network access permissions.
+
+The current source tree contains generic examples. Earlier Git commits may retain
+original operational examples and author metadata; a source cleanup does not
+anonymize repository history or its GitHub owner. Do not interpret this as a
+promise that already-public information has been erased.
+
+## License
+
+Project automation is MIT licensed. FEX, Ubuntu and Rust/Steam retain their own
+licenses and terms; no license to redistribute their binaries is granted here.

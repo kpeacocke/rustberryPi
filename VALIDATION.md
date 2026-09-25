@@ -8,7 +8,7 @@ Repository built on 2026-09-23. Checks ran in Ubuntu under WSL, not on the Pi.
 | Download dated RootFS and SteamCMD bootstrap | SHA256 digests recorded in role defaults |
 | Extract pinned RootFS and generate manifest | 39,527 path entries; compressed manifest included |
 | Verify manifest against complete reference extraction | Passed |
-| Inventory resolves pidesktop and group variables | Passed |
+| Inventory resolves rustpi and group variables | Passed |
 | Syntax check all four playbooks | Passed with ansible-core 2.20.1 |
 | ansible-lint production profile | Passed with ansible-lint 26.1.1; no rule suppressions |
 | Python helper tests | 27 passed |
@@ -77,7 +77,7 @@ workaround or log suppression was introduced.
 
 ## Optional Rust+ on WAN2 — 2026-09-25
 
-The user verified outbound IPv4 through NBN/WAN2 after a temporary NetworkManager
+The user verified outbound IPv4 through the selected public WAN after a temporary NetworkManager
 DNS change. Added `rust_plus_enabled` (default false), port 28083, optional UFW
 management and a local TCP-listener check. Both enabled and disabled service units
 were rendered through Ansible in check mode and their companion arguments verified.
@@ -103,3 +103,16 @@ new SSH access on the Pi must still be verified after deployment.
 
 All five playbooks passed syntax checks, production lint passed and 38 helper tests
 passed, including allowed/disallowed management peers and mismatched SSH ports.
+
+## Public inventory and account update
+
+Validated syntax for all six playbooks and 40 helper tests, including private
+inventory migration preservation and refusal to overwrite operator changes.
+An isolated Debian 13 container exercised the actual automation account role:
+first run changed five tasks, second run changed zero, key-based SSH and
+`sudo -n id -u` succeeded, and effective SSH configuration required public-key
+authentication with password/keyboard-interactive authentication disabled.
+The storage account tasks adopted UID 2001/GID 2011 from simulated persistent
+ownership, converged with zero changes on repeat, and rejected a requested
+conflicting GID while preserving ownership. These tests did not exercise ARM
+emulation, mounts or a reboot, and have not deployed this update to a live Pi.

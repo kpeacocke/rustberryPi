@@ -35,18 +35,18 @@ firewall = load('firewall', 'roles/rust_security/files/preflight.py')
 
 class FirewallTests(unittest.TestCase):
     def test_current_lan_session_allowed(self):
-        firewall.validate(['192.168.1.0/24', '192.168.5.0/24'], '192.168.5.20 53000 192.168.1.254 22', 22)
+        firewall.validate(['10.20.0.0/24', '10.30.0.0/24'], '10.30.0.20 53000 10.20.0.50 22', 22)
 
     def test_console_allowed(self):
-        firewall.validate(['192.168.1.0/24'], '', 22)
+        firewall.validate(['10.20.0.0/24'], '', 22)
 
     def test_unlisted_peer_refused(self):
         with self.assertRaisesRegex(ValueError, 'outside'):
-            firewall.validate(['192.168.1.0/24'], '192.168.5.20 53000 192.168.1.254 22', 22)
+            firewall.validate(['10.20.0.0/24'], '10.30.0.20 53000 10.20.0.50 22', 22)
 
     def test_wrong_ssh_port_refused(self):
         with self.assertRaisesRegex(ValueError, 'different server port'):
-            firewall.validate(['192.168.1.0/24'], '192.168.1.20 53000 192.168.1.254 2222', 22)
+            firewall.validate(['10.20.0.0/24'], '10.20.0.20 53000 10.20.0.50 2222', 22)
 
     def test_global_or_empty_allowlist_refused(self):
         for networks in [[], ['0.0.0.0/0'], ['::/0'], ['8.8.8.0/24']]:
@@ -243,7 +243,7 @@ class SteamTests(unittest.TestCase):
 
 class BackupTests(unittest.TestCase):
     def test_safe_member(self):
-        backup.validate_members([tarfile.TarInfo('data/kp-pi5/player.db')])
+        backup.validate_members([tarfile.TarInfo('data/rustberry/player.db')])
 
     def test_unsafe_paths(self):
         for name in ['/etc/passwd', 'data/../../escape', 'other/file']:

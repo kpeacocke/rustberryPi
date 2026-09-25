@@ -1,0 +1,5 @@
+---
+- name: Reload automation SSH configuration
+  ansible.builtin.service:
+    name: ssh
+    state: reloaded

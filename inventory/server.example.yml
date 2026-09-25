@@ -1,0 +1,16 @@
+---
+# NEW servers only: copy into ignored host_vars/<alias>/settings.yml and edit.
+# Existing installations must preserve their current identity and numeric IDs.
+rust_identity: rustberry
+rust_hostname: Raspberry Pi Rust
+rust_uid: 2001
+# rust_gid: 2001  # Optional; existing account/disk GID is adopted if omitted.
+rust_worldsize: 1500
+rust_seed: 12345
+rust_maxplayers: 4
+rust_storage_label: RUSTSERVER
+rust_storage_uuid: ""  # Prefer the actual filesystem UUID from lsblk -f.
+rust_manage_firewall: false
+rust_ssh_allowed_networks: []  # Fill in your trusted LAN/VPN networks before enabling.
+rust_plus_enabled: false
+# fex_existing_rootfs: /absolute/path/to/manual/Ubuntu_24_04

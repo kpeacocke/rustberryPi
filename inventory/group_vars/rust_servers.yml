@@ -1,11 +1,12 @@
 ---
 # Keep identity, seed and UID stable across microSD rebuilds.
-rust_identity: kp-pi5
-rust_hostname: "KP Pi 5 Rust PoC"
+rust_identity: ""  # Required in private host vars; keep your existing identity.
+rust_hostname: "Raspberry Pi Rust"
 rust_worldsize: 1500
 rust_seed: 12345
 rust_maxplayers: 4
 rust_uid: 2001
+# Optional rust_gid: adopt existing account/disk GID, otherwise use rust_uid.
 rust_storage_label: RUSTSERVER
 # Prefer a UUID if more than one disk could carry this label.
 rust_storage_uuid: ""
@@ -18,9 +19,7 @@ rust_plus_enabled: false  # Enable after WAN routing and TCP forwarding are veri
 rust_plus_port: 28083
 rust_manage_firewall: false  # Optional UFW; see README before enabling.
 rust_ssh_port: 22
-rust_ssh_allowed_networks:
-  - 192.168.1.0/24
-  - 192.168.5.0/24
+rust_ssh_allowed_networks: []  # Required when enabling the firewall.
 rust_client_cidr: "192.168.0.0/16"
 # This directory must be on a separately mounted NAS filesystem.
 rust_backup_destination: /mnt/nas/rust-backups
