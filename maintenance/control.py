@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Fixed maintenance operations; no arbitrary RCON command interface."""
 import argparse
+from contextlib import closing
 import hashlib
 import json
 import os
@@ -62,8 +63,8 @@ def countdown_points(seconds):
 def notices(seconds, jobs):
     # One connection for the countdown; notices and save are deliberately fixed.
     password = Path('/etc/rustberrypi/rcon-password').read_text().strip()
-    with websocket.create_connection('ws://127.0.0.1:28016/' + password, timeout=15,
-                                     http_no_proxy=['127.0.0.1']) as client:
+    with closing(websocket.create_connection('ws://127.0.0.1:28016/' + password, timeout=15,
+                                             http_no_proxy=['127.0.0.1'])) as client:
         players = json.loads(exchange(client, 'playerlist', 1))
         print(json.dumps({'connected_players': len(players)}), flush=True)
         identifier = 2

@@ -53,13 +53,11 @@ class MaintenanceTests(unittest.TestCase):
         self.assertEqual(control.countdown_points(0), [0])
 
     def test_notification_checks_players_announces_then_saves(self):
-        client = MagicMock()
+        client = MagicMock(spec=['send', 'recv', 'settimeout', 'ping', 'close'])
         client.recv.side_effect = [json.dumps({'Identifier': 1, 'Message': '[]'}),
                                   json.dumps({'Identifier': 2, 'Message': ''}),
                                   json.dumps({'Identifier': 3, 'Message': 'Saved'})]
-        connection = MagicMock()
-        connection.__enter__.return_value = client
-        with patch.object(control.websocket, 'create_connection', return_value=connection) as connect, \
+        with patch.object(control.websocket, 'create_connection', return_value=client) as connect, \
                 patch.object(control.Path, 'read_text', return_value='secret'), \
                 patch('sys.stdout', new_callable=io.StringIO) as output:
             control.notices(0, 'rust')
@@ -69,17 +67,17 @@ class MaintenanceTests(unittest.TestCase):
         self.assertEqual(commands[0], 'playerlist')
         self.assertTrue(commands[1].startswith('say '))
         self.assertEqual(commands[2], 'server.save')
+        client.close.assert_called_once()
 
     def test_failed_notification_cannot_reach_save(self):
-        client = MagicMock()
+        client = MagicMock(spec=['send', 'recv', 'settimeout', 'ping', 'close'])
         client.recv.side_effect = ConnectionResetError()
-        connection = MagicMock()
-        connection.__enter__.return_value = client
-        with patch.object(control.websocket, 'create_connection', return_value=connection), \
+        with patch.object(control.websocket, 'create_connection', return_value=client), \
                 patch.object(control.Path, 'read_text', return_value='secret'):
             with self.assertRaises(ConnectionResetError):
                 control.notices(0, 'rust')
         self.assertEqual(client.send.call_count, 1)
+        client.close.assert_called_once()
 
     def test_archive_integrity_and_metadata_are_required(self):
         with tempfile.TemporaryDirectory() as folder:
