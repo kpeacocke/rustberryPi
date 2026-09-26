@@ -34,7 +34,10 @@ playbooks to implement “all”: that would cause three countdowns and restarts
    integrity, **not** a restore rehearsal or a bootable OS backup.
 7. Run only the selected component(s). “All” runs OS → FEX → Rust.
 8. Check 4 KB pages, start Rust, wait for A2S readiness and fresh authenticated RCON
-   telemetry, then report success and restore previously running timers.
+   telemetry, clear the historical automatic restart counter, then report success
+   and restore previously running timers. The counter is cleared only after both
+   health checks pass; failed maintenance retains it. This does not restart Rust
+   or erase its journal. A subsequent automatic restart raises the dashboard notice again.
 
 These are explicit maintenance actions, not zero-change convergence runs. They
 warn, back up and restart even if the selected version is already installed;
