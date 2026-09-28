@@ -20,6 +20,14 @@ with patch.dict(sys.modules, {'psutil': MagicMock(), 'websocket': MagicMock()}):
 
 
 class TelemetryTests(unittest.TestCase):
+    def test_capacity_counts_five_unique_approved_friends_not_zero_public_slots(self):
+        roster = ['one', 'two', 'three', 'four', 'five']
+        self.assertEqual(server.player_capacity({'access_mode': 'restricted', 'allowed_players': roster,
+                                                'public_capacity': 4}), {'mode': 'restricted', 'capacity': 5})
+        self.assertEqual(server.player_capacity({'access_mode': 'public', 'public_capacity': 5}),
+                         {'mode': 'public', 'capacity': 5})
+        self.assertIsNone(server.player_capacity({})['capacity'])
+
     def test_history_persists_login_and_never_projects_steam_ids(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'players.json'

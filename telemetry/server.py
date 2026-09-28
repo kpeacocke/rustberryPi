@@ -115,6 +115,12 @@ def public_players(rows, show_names):
             for index, row in enumerate(rows)]
 
 
+def player_capacity(config):
+    players = set(config.get('allowed_players', []))
+    mode = config.get('access_mode', 'restricted' if players else 'public')
+    return {'mode': mode, 'capacity': len(players) if mode == 'restricted' else config.get('public_capacity')}
+
+
 def suggestions(data):
     items = []
     host = data.get('host', {})
@@ -325,6 +331,7 @@ class Collector:
                 'game_query_ready': a2s_ready(),
                 'service': service, 'maintenance': maintenance, 'companion_listener': companion,
                 'events': list(self.events), 'history': list(self.history)}
+        data['access'] = player_capacity(self.config)
         data['suggestions'] = suggestions(data)
         data['allowed_players'] = self.player_history.public(self.config['show_names'], self.last_rcon == now)
         data['player_history_error'] = self.player_history.error

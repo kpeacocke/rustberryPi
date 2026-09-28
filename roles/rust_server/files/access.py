@@ -110,6 +110,9 @@ def main():
     if not re.fullmatch(r'[a-zA-Z0-9_-]+', identity):
         raise ValueError('Invalid identity')
     request = json.load(sys.stdin)
+    public_capacity = int(request.get('maxplayers', 5))
+    if not 1 <= public_capacity <= 5:
+        raise ValueError('Public capacity must be between one and five')
     root = Path('/srv/rust/data')
     cfg = root / identity / 'cfg'
     state = root / 'access.json'
@@ -150,7 +153,7 @@ def main():
             if updated != original:
                 atomic_write(users, updated, account.pw_uid, account.pw_gid)
             atomic_write(state, json.dumps(desired, sort_keys=True) + '\n', 0, 0)
-        print(json.dumps({'changed': changed, 'maxplayers': 0 if desired['mode'] == 'restricted' else 4}))
+        print(json.dumps({'changed': changed, 'maxplayers': 0 if desired['mode'] == 'restricted' else public_capacity}))
 
 
 if __name__ == '__main__':

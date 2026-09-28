@@ -20,6 +20,10 @@ class AccessTests(unittest.TestCase):
         desired = access.policy({'mode': 'restricted', 'players': players, 'admins': [A]}, None)
         self.assertEqual(len(desired['players']), 5)
         self.assertEqual(desired['admins'], [A])
+        rendered = access.reconcile('', desired)
+        self.assertEqual(rendered.count('skipqueueid '), 5)
+        self.assertEqual(rendered.count('ownerid '), 1)
+        self.assertEqual(access.reconcile(rendered, desired), rendered)
         with self.assertRaises(ValueError):
             access.policy({'mode': 'restricted', 'players': players + ['76561198000000006']}, None)
 
@@ -92,7 +96,7 @@ class AccessTests(unittest.TestCase):
 
             def run(command, **kwargs):
                 calls.append(command)
-                if command[1] == 'stop':
+                if command[1] == 'stop' and sum(c[1] == 'stop' for c in calls) == 1:
                     self.assertFalse((root / 'world/cfg/users.cfg').exists())
                 return SimpleNamespace(returncode=0)
 
@@ -110,3 +114,9 @@ class AccessTests(unittest.TestCase):
                     self.assertEqual(json.loads(output.getvalue())['changed'], expected)
                 self.assertEqual(sum(command[1] == 'stop' for command in calls), 1)
                 self.assertIn(A, (root / 'world/cfg/users.cfg').read_text())
+                for slots in (5, 4):
+                    output = io.StringIO()
+                    with patch('sys.stdin', io.StringIO(json.dumps({'mode': 'public', 'maxplayers': slots}))), \
+                            patch('sys.stdout', output):
+                        access.main()
+                    self.assertEqual(json.loads(output.getvalue())['maxplayers'], slots)

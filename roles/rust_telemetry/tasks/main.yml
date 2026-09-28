@@ -204,6 +204,8 @@
           'fex': rust_telemetry_fex, 'rootfs': rust_telemetry_rootfs,
           'fex_version': rust_telemetry_fex_version,
           'allowed_players': (rust_telemetry_access.content | b64decode | from_json).players,
+          'access_mode': (rust_telemetry_access.content | b64decode | from_json).mode,
+          'public_capacity': rust_maxplayers | int,
           'player_names': rust_telemetry_player_names,
           'player_history_file': '/srv/rust/data/.rustberrypi-telemetry/players.json'} | to_nice_json }}
     dest: /etc/rustberrypi/telemetry.json

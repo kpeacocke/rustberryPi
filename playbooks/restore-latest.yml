@@ -1,0 +1,150 @@
+---
+- name: Restore the latest completed NAS backup on an existing server
+  hosts: rust_servers
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Require deliberate rollback and configuration reapplication
+      ansible.builtin.assert:
+        that:
+          - rust_restore_confirm | default(false) | bool
+          - rust_restore_replace | default(false) | bool
+          - rust_start | bool
+          - rust_telemetry_enabled | default(false) | bool
+        fail_msg: >-
+          Set rust_restore_confirm=true, rust_restore_replace=true, rust_start=true and
+          rust_telemetry_enabled=true; this rolls back world and player progress.
+
+    - name: Refuse to overlap a maintenance workflow
+      ansible.builtin.stat:
+        path: /var/lib/rustberrypi-maintenance
+      register: rust_restore_window
+
+    - name: Require previous maintenance to be complete
+      ansible.builtin.assert:
+        that: not rust_restore_window.stat.exists
+        fail_msg: An existing maintenance window needs inspection before restoring.
+
+    - name: Install current backup and restore helper
+      ansible.builtin.copy:
+        src: ../roles/rust_backup/files/backup.py
+        dest: /usr/local/libexec/pi5-rust/backup.py
+        owner: root
+        group: root
+        mode: '0750'
+
+    - name: Select and fully verify the latest completed NAS archive before downtime
+      ansible.builtin.command:
+        argv: [python3, /usr/local/libexec/pi5-rust/backup.py, select-latest,
+               --mount, '{{ rust_backup_mount }}', --destination, '{{ rust_backup_destination }}']
+      register: rust_restore_selection
+      changed_when: false
+
+    - name: Pin the selected archive for this restore
+      ansible.builtin.set_fact:
+        rust_restore_selected: '{{ rust_restore_selection.stdout | from_json }}'
+
+    - name: Report the selected rollback archive
+      ansible.builtin.debug:
+        msg: 'Restoring {{ rust_restore_selected.archive }}; current data will be preserved in /srv/rust/data.pre-restore-TIMESTAMP.'
+
+    - name: Install current announcement helper
+      ansible.builtin.copy:
+        src: ../maintenance/control.py
+        dest: /usr/local/libexec/pi5-rust/maintenance.py
+        owner: root
+        group: root
+        mode: '0750'
+
+    - name: Record service states before pausing background work
+      ansible.builtin.command:
+        argv: [systemctl, show, '{{ item }}', '--property=ActiveState', --value]
+      loop: [rust.service, rust-backup.timer, rust-maintenance-check.timer, rust-telemetry.service]
+      register: rust_restore_initial
+      changed_when: false
+
+    - name: Acquire exclusive maintenance window
+      ansible.builtin.command: mkdir -m 0700 /var/lib/rustberrypi-maintenance
+      changed_when: true
+
+    - name: Announce and restore without starting obsolete configuration
+      block:
+        - name: Pause background timers and telemetry
+          ansible.builtin.systemd_service:
+            name: '{{ item }}'
+            state: stopped
+          loop: [rust-backup.timer, rust-maintenance-check.timer, rust-telemetry.service]
+
+        - name: Wait for already running scheduled operations
+          ansible.builtin.command:
+            argv: [systemctl, show, '{{ item }}', '--property=ActiveState', --value]
+          register: rust_restore_background
+          changed_when: false
+          until: rust_restore_background.stdout in ['inactive', 'failed']
+          retries: 120
+          delay: 10
+          loop: [rust-backup.service, rust-maintenance-check.service]
+
+        - name: Allow a quiet RCON interval
+          ansible.builtin.pause:
+            seconds: 60
+          when: rust_restore_initial.results[0].stdout == 'active'
+
+        - name: Warn connected players before restoring the world
+          ansible.builtin.command:
+            argv: [python3, /usr/local/libexec/pi5-rust/maintenance.py, announce,
+                   --seconds, '{{ rust_maintenance_warning_seconds | default(600) | int }}', --jobs, restore]
+          async: 3700
+          poll: 10
+          changed_when: true
+          when: rust_restore_initial.results[0].stdout == 'active'
+
+        - name: Restore and preserve the current world while leaving Rust stopped
+          ansible.builtin.command:
+            argv: [python3, /usr/local/libexec/pi5-rust/backup.py, restore,
+                   --archive, '{{ rust_restore_selected.archive }}',
+                   --sha256, '{{ rust_restore_selected.sha256 }}', --replace, --leave-stopped]
+          register: rust_restore_result
+          changed_when: true
+
+      rescue:
+        - name: Resume previously active background services after failure
+          ansible.builtin.systemd_service:
+            name: '{{ item.item }}'
+            state: started
+          loop: '{{ rust_restore_initial.results[1:] }}'
+          when: item.stdout == 'active'
+
+        - name: Release the restore window after a failed attempt
+          ansible.builtin.file:
+            path: /var/lib/rustberrypi-maintenance
+            state: absent
+
+        - name: Report failure without starting an unverified game
+          ansible.builtin.fail:
+            msg: >-
+              Restore failed. No success is inferred; inspect the preceding task. The prior data is preserved.
+              Rust may be stopped; do not start it until the failure is understood.
+
+- name: Reapply current private access settings and telemetry then validate the restored game
+  ansible.builtin.import_playbook: rust.yml
+
+- name: Complete the verified restore workflow
+  hosts: rust_servers
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Clear reviewed automatic restart history # noqa: command-instead-of-module -- No reset-failed module operation.
+      ansible.builtin.command: systemctl reset-failed rust.service
+      changed_when: true
+
+    - name: Release completed restore window
+      ansible.builtin.file:
+        path: /var/lib/rustberrypi-maintenance
+        state: absent
+
+    - name: Report restored and verified service
+      ansible.builtin.debug:
+        msg: >-
+          Restored {{ rust_restore_selected.archive }}; current configuration reapplied and game/RCON health checks passed.
+          The previous world remains in /srv/rust/data.pre-restore-TIMESTAMP.

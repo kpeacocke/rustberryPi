@@ -3,7 +3,8 @@
   ansible.builtin.assert:
     that:
       - rust_identity is match('^[a-zA-Z0-9_-]+$')
-      - rust_maxplayers | int == 4
+      - rust_maxplayers | int >= 1
+      - rust_maxplayers | int <= 5
       - rust_worldsize | int >= 1000
       - rust_worldsize | int <= 2000
       - rust_seed | int >= 0
@@ -94,7 +95,8 @@
     stdin: >-
       {{ {'mode': rust_access_mode | default('preserve'),
           'players': rust_allowed_players | default(''),
-          'admins': rust_admin_players | default('preserve')} | to_json }}
+          'admins': rust_admin_players | default('preserve'),
+          'maxplayers': rust_maxplayers | int} | to_json }}
   register: rust_server_access
   changed_when: (rust_server_access.stdout | from_json).changed
   no_log: true

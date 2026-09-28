@@ -1,7 +1,7 @@
 # rustberryPi — Raspberry Pi 5 Rust server
 
 Ansible for one specific experiment: a Raspberry Pi 5, 16 GB RAM, Debian 13
-Trixie arm64, 4 KB Raspberry Pi kernel, FEX and a vanilla four-player Rust server.
+Trixie arm64, 4 KB Raspberry Pi kernel, FEX and a vanilla five-player Rust server.
 The OS lives on microSD; the ext4 USB labelled `RUSTSERVER` holds `/srv/rust`.
 No plugins, containers, game-server framework or scheduled game updates.
 
@@ -26,7 +26,7 @@ require the hardware acceptance procedure below.
 | FEX | `e2f973fe931e6dc2ce523795e51ca1ac3ca85816` / `FEX-2609-120-ge2f973fe9` |
 | RootFS | FEX Ubuntu 24.04, image dated 2026-08-11; Ubuntu 24.04.4 userspace |
 | Steam app | `258550`, public branch, anonymous login |
-| World | identity `rustberry`, procedural size `1500`, seed `12345`, four players |
+| World | identity `rustberry`, procedural size `1500`, seed `12345`, five players |
 | Network | UDP 28015 game, UDP 28017 query; RCON loopback TCP 28016; Rust+ optional TCP 28083 |
 
 RootFS SHA256:
@@ -213,7 +213,7 @@ The check fails early if the service stops or repeatedly restarts and includes
 service status and the last 100 journal lines in its error. Override
 `rust_health_timeout` only when logs show legitimate slow startup; a longer timeout
 does not repair a crashed server.
-Join from a client with `connect PI_ADDRESS:28015`. Confirm four-player capacity,
+Join from a client with `connect PI_ADDRESS:28015`. Confirm configured player capacity,
 save/restart behavior, CPU temperature, memory and playability before relying on it.
 
 Default firewall management is off until explicitly configured. Permit UDP
@@ -317,6 +317,37 @@ keep backups off the Pi, and install OS security updates during maintenance with
 4096-byte page-size check. Automated OS upgrades/reboots are not introduced here.
 
 ## NAS backup and restore
+
+For an existing server with telemetry and working RCON, restore the latest completed
+NAS archive and reapply current private settings in one workflow:
+
+```bash
+ansible-playbook playbooks/restore-latest.yml \
+  -e @inventory/host_vars/YOUR_HOST/99-access.yml \
+  -e rust_restore_confirm=true -e rust_restore_replace=true \
+  -e rust_telemetry_enabled=true -e rust_start=true
+```
+
+Use the same inventory, connection and become options as normal convergence. The
+latest archive is selected by the UTC timestamp in its filename, and pinned before
+any downtime. Only completed archives with checksum sidecars are candidates; a
+corrupt latest completed archive aborts rather than silently restoring an older
+world. The checksum, archive contents and NAS mount are checked first. Connected
+players get the usual ten-minute warning (`rust_maintenance_warning_seconds`).
+Current data is retained at `/srv/rust/data.pre-restore-TIMESTAMP`; extra free USB
+space is required. This is an actual rollback of world/player progress, not a test.
+
+The workflow restores while leaving Rust stopped, then runs normal convergence to
+reapply **current private player/admin settings**, credentials and telemetry state
+permissions. Finally it checks game and RCON readiness and clears the historical
+restart counter. Restore timestamps reflect the file operation; game health is
+verified separately. Keep the same private identity, seed, world size and UID.
+If configuration/health checks fail after restoring, the maintenance window remains
+at `/var/lib/rustberrypi-maintenance`. Inspect and fix the failure, rerun `rust.yml`
+with the same private variables, and only after health checks pass remove the empty
+window with `sudo rmdir /var/lib/rustberrypi-maintenance`. Do not rerun the restore
+merely to retry configuration. The previous world is never automatically deleted.
+
 
 Mount a NAS share separately at `/mnt/nas` using your existing NFS/SMB setup.
 Credentials and share provisioning are deliberately outside this repository.
@@ -517,7 +548,7 @@ survey IDs are operational data, not secret credentials, and may appear in AWX.
 
 This uses Facepunch's documented vanilla method: `server.maxplayers=0` plus
 `skipqueueid` entries in the persistent identity's `cfg/users.cfg`. The approved
-list is limited to five, replacing the ordinary four-slot limit. Join permission alone grants no admin rights. When administrator management is
+list is limited to five, replacing the ordinary public-slot limit. Join permission alone grants no admin rights. When administrator management is
 left at `preserve`, existing owners/moderators outside the approved list cause a
 failure for explicit review because admins bypass the queue. Bans are preserved.
 Unknown users.cfg commands and conflicting server.cfg capacity settings also fail

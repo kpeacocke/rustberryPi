@@ -115,3 +115,9 @@ RCON reports unknown status and retains the last recorded date.
 
 Sources: [Facepunch WebRCON](https://github.com/Facepunch/webrcon),
 [Raspberry Pi vcgencmd](https://www.raspberrypi.com/documentation/computers/os.html#vcgencmd).
+
+Player capacity is shown as `connected / capacity` on the touch and game screens.
+Restricted mode uses the actual approved roster count (up to five), because its
+vanilla public slot setting is deliberately zero. Public mode uses configured
+`rust_maxplayers` (1–5, default 5). Stale RCON still displays Unknown, and roster
+Steam IDs are never sent to the browser.

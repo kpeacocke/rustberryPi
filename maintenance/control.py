@@ -147,7 +147,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('operation', choices=['inspect', 'announce', 'verify-backup', 'activate-fex'])
     parser.add_argument('--seconds', type=int, default=600)
-    parser.add_argument('--jobs', choices=['os', 'fex', 'rust', 'all'], default='all')
+    parser.add_argument('--jobs', choices=['os', 'fex', 'rust', 'all', 'restore'], default='all')
     parser.add_argument('--archive')
     parser.add_argument('--commit')
     parser.add_argument('--version')
