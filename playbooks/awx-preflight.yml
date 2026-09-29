@@ -1,0 +1,101 @@
+---
+- name: Check an existing RustberryPi deployment without maintenance
+  hosts: rust_servers
+  become: true
+  tasks:
+    - name: Report controller and target versions
+      ansible.builtin.debug:
+        msg:
+          ansible_core: '{{ ansible_version.full }}'
+          target_python: '{{ ansible_facts.python.version }}'
+          distribution: '{{ ansible_facts.distribution }} {{ ansible_facts.distribution_version }}'
+
+    - name: Require the tested controller release series
+      ansible.builtin.assert:
+        that:
+          - ansible_version.full is version('2.20', '>=')
+          - ansible_version.full is version('2.21', '<')
+        fail_msg: Use an execution environment built with requirements-dev.txt; this project is tested with ansible-core 2.20.1.
+
+    - name: Check current hostname
+      ansible.builtin.command: hostnamectl --static
+      register: preflight_hostname
+      changed_when: false
+
+    - name: Verify the configured system hostname
+      ansible.builtin.assert:
+        that:
+          - rust_system_hostname | default('') | length == 0 or preflight_hostname.stdout == rust_system_hostname
+
+    - name: Check DNS using the operating system resolver
+      ansible.builtin.command: timeout 15 getent ahostsv4 api.facepunch.com
+      changed_when: false
+
+    - name: Check the required kernel page size
+      ansible.builtin.command: getconf PAGESIZE
+      register: preflight_pages
+      changed_when: false
+      failed_when: preflight_pages.rc != 0 or preflight_pages.stdout | trim != '4096'
+
+    - name: Require running Rust and telemetry services
+      ansible.builtin.command:
+        argv: [systemctl, is-active, --quiet, '{{ item }}']
+      loop: [rust.service, rust-telemetry.service]
+      changed_when: false
+
+    - name: Verify persistent USB and NAS mounts
+      ansible.builtin.command:
+        argv: [findmnt, --noheadings, --output, FSTYPE, --mountpoint, '{{ item }}']
+      loop: ['/srv/rust', '{{ rust_backup_mount }}']
+      register: preflight_mount
+      changed_when: false
+      failed_when: preflight_mount.rc != 0 or preflight_mount.stdout | trim in ['', 'autofs']
+
+    - name: Check for an unfinished maintenance window
+      ansible.builtin.stat:
+        path: /var/lib/rustberrypi-maintenance
+      register: preflight_window
+
+    - name: Require no unfinished maintenance window
+      ansible.builtin.assert:
+        that: not preflight_window.stat.exists
+        fail_msg: Inspect the existing maintenance window using maintenance/README.md before launching another job.
+
+    - name: Read deployed world metadata without printing private settings
+      ansible.builtin.slurp:
+        src: /srv/rust/data/deployment.json
+      register: preflight_metadata
+      no_log: true
+
+    - name: Require private world configuration to match the deployed world
+      ansible.builtin.assert:
+        that:
+          - rust_identity | default('') == (preflight_metadata.content | b64decode | from_json).identity
+          - rust_seed | int == (preflight_metadata.content | b64decode | from_json).seed | int
+          - rust_worldsize | int == (preflight_metadata.content | b64decode | from_json).worldsize | int
+          - rust_uid | int == (preflight_metadata.content | b64decode | from_json).uid | int
+        fail_msg: Populate private AWX host variables with the existing identity, seed, world size and UID before deployment or restore.
+      no_log: true
+
+    - name: Read collector health without opening another RCON session
+      ansible.builtin.uri:
+        url: 'http://127.0.0.1:{{ rust_telemetry_port | default(8090) }}/api/status'
+        return_content: true
+        use_proxy: false
+      register: preflight_status
+      no_log: true
+
+    - name: Require a recent successful RCON sample
+      ansible.builtin.assert:
+        that:
+          - preflight_status.json.rcon_error is none
+          - preflight_status.json.rcon_at | float > 0
+          - (now(utc=true).timestamp() | float - preflight_status.json.rcon_at | float) < 120
+        fail_msg: Telemetry must have a successful RCON sample within the last two minutes.
+      no_log: true
+
+    - name: Explain the scope of a successful preflight
+      ansible.builtin.debug:
+        msg: >-
+          Read-only checks passed. No game restart, backup, update, restore, or backup write test was performed.
+          Review pins and schedule inputs before launch.

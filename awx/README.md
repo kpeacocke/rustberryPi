@@ -17,8 +17,14 @@ does not upgrade the execution environment's Ansible version.
 
 ## Jobs and workflow entry points
 
+Shared defaults are mirrored in `playbooks/group_vars/rust_servers.yml` so AWX's
+generated inventory loads them too. Keep that file identical to
+`inventory/group_vars/rust_servers.yml`; the test suite checks this. Put private
+overrides on the AWX **host**, not in shared group defaults.
+
 | Job | Playbook | Workflow |
 | --- | --- | --- |
+| Readiness check | `playbooks/awx-preflight.yml` | Read-only deployment checks |
 | Converge | `playbooks/rust.yml` | Deploy / configure |
 | Player access | `playbooks/rust.yml` | Access survey from `awx/survey.json` |
 | Telemetry | `playbooks/telemetry.yml` | Dashboard deployment |
@@ -57,3 +63,26 @@ Creating templates does not prove connectivity. Verify project sync, execution
 environment compatibility, SSH/become access and private variables before the
 first operational launch. Live AWX object IDs and credentials do not belong in
 this public repository.
+
+## Manual launches and schedules
+
+Run **Readiness check** first. It checks the controller release series, SSH/sudo,
+hostname, DNS, 4 KB pages, running services, USB/NAS mounts, deployed world
+settings, maintenance guard and recent collector RCON health. It does not verify
+NAS write permissions, archive integrity, all deployment settings, Steam login,
+or successful completion of a future update. The operational jobs retain their
+own backup and health gates.
+
+For manual work, open the desired workflow and choose Launch. Answer its survey.
+OS and Rust use the ten-minute warning by default; FEX and All also require a
+reviewed commit and matching version. Backup briefly stops Rust and has no
+countdown. Restore requires deliberate confirmation and rolls back progress.
+
+For a recurring run, open the workflow's Schedules tab, choose Add, select the
+timezone, start time and recurrence, and save the launch inputs. Schedules cannot
+wait for a person to answer a survey or enter an SSH/sudo password. Save reviewed
+survey values with the schedule and use the existing stored Machine credential.
+Do not schedule restores. Do not schedule FEX/All expecting automatic latest;
+their pins must be selected and maintained deliberately. Do not overlap different
+maintenance workflows or the Pi's backup timer. No recurring schedule is enabled
+by this repository; choose an operating window before creating one.
