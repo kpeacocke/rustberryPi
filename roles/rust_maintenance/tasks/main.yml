@@ -3,20 +3,20 @@
   ansible.builtin.assert:
     that:
       - not ansible_check_mode
-      - rust_maintenance_target in ['os', 'fex', 'rust', 'all']
+      - rust_maintenance_target in ['os', 'fex', 'rust', 'os-rust', 'all']
       - rust_maintenance_warning_seconds | int >= 0
       - rust_maintenance_warning_seconds | int <= 3600
       - rust_maintenance_health_timeout | int >= 60
       - ansible_facts['distribution'] == 'Debian'
       - >-
-        rust_maintenance_target not in ['os', 'all'] or not rust_maintenance_os_reboot | bool
+        rust_maintenance_target not in ['os', 'os-rust', 'all'] or not rust_maintenance_os_reboot | bool
         or ansible_connection | default('ssh') != 'local'
       - >-
         rust_maintenance_target not in ['fex', 'all'] or
         (rust_maintenance_fex_commit is match('^[a-f0-9]{40}$') and
         rust_maintenance_fex_version is match('^[A-Za-z0-9._-]+$'))
     fail_msg: >-
-      Choose os, fex, rust or all. FEX requires an explicit commit and version.
+      Choose os, fex, rust, os-rust or all. FEX requires an explicit commit and version.
       Rebooting OS jobs require an SSH controller; local jobs must set rust_maintenance_os_reboot=false.
 
 - name: Install maintenance control utility
@@ -154,7 +154,7 @@
 
     - name: Run OS job
       ansible.builtin.include_tasks: os.yml
-      when: rust_maintenance_target in ['os', 'all']
+      when: rust_maintenance_target in ['os', 'os-rust', 'all']
 
     - name: Run pinned FEX job
       ansible.builtin.include_tasks: fex.yml
@@ -162,7 +162,7 @@
 
     - name: Run Rust job
       ansible.builtin.include_tasks: rust.yml
-      when: rust_maintenance_target in ['rust', 'all']
+      when: rust_maintenance_target in ['rust', 'os-rust', 'all']
 
     - name: Require 4 KB kernel pages after maintenance
       ansible.builtin.command: getconf PAGESIZE
