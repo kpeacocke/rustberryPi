@@ -1,0 +1,6 @@
+---
+- name: Set the Linux hostname without restarting Rust
+  hosts: rust_servers
+  become: true
+  roles:
+    - rust_hostname

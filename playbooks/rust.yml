@@ -10,6 +10,7 @@
   roles:
     - automation_account
     - prerequisites
+    - rust_hostname
     - raspberry_pi
     - rust_storage
     - fex

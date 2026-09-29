@@ -603,3 +603,25 @@ already configured server. Initial setup configures authenticated local RCON and
 restarts Rust once; subsequent unchanged deployment does not restart the game.
 No new public ports are opened. Update probes inspect available versions and
 refresh package indexes; they never install game or OS updates.
+
+## Linux hostname and inventory name
+
+`rust_system_hostname` sets the running/persistent Linux hostname and Debian
+loopback hosts entry. It is optional and independent of `rust_identity`, which
+selects the saved Rust world. Do not change the world identity to rename the Pi.
+
+To rename a host in this repository's private directory-based inventory:
+
+```bash
+python tools/rename_inventory_host.py --address YOUR_PI_IP --name rustberrypi
+ansible-playbook playbooks/hostname.yml --limit rustberrypi --ask-become-pass
+```
+
+On the Pi itself, add `--connection local -e ansible_python_interpreter=/usr/bin/python3`.
+The helper preserves host variables, changes the inventory alias by matching its
+address, and saves the original inventory in ignored `host_vars/.rename-backups`.
+It refuses ambiguous addresses or an existing destination rather than merging.
+Use `inventory/host_vars/rustberrypi/` and `--limit rustberrypi` afterwards.
+For AWX, rename the host in its inventory and set `rust_system_hostname` there;
+local inventory files are separate from AWX. The hostname playbook does not
+restart Rust or alter the desktop login account, world identity or player state.
