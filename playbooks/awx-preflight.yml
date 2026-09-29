@@ -43,6 +43,11 @@
       loop: [rust.service, rust-telemetry.service]
       changed_when: false
 
+    - name: Access backup directory to activate an idle NAS automount
+      ansible.builtin.command:
+        argv: [timeout, '45', stat, --, '{{ rust_backup_destination }}']
+      changed_when: false
+
     - name: Verify persistent USB and NAS mounts
       ansible.builtin.command:
         argv: [findmnt, --noheadings, --output, FSTYPE, --mountpoint, '{{ item }}']

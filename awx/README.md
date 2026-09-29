@@ -15,6 +15,17 @@ environment. Use an execution environment with the tested ansible-core version
 from `requirements-dev.txt` and Python compatible with it; collection sync alone
 does not upgrade the execution environment's Ansible version.
 
+Verified runtime: official `ghcr.io/ansible/community-ansible-dev-tools:v26.1.0`
+contains ansible-core 2.20.1 and Python 3.13.9. Pin its manifest rather than latest:
+
+```text
+ghcr.io/ansible/community-ansible-dev-tools@sha256:1cb572c1c66b8a73af9b6368e12d9becf2e960b8bfab885c663b8b65583cec3b
+```
+
+Create a dedicated AWX execution environment with this image and select it for
+all RustberryPi job templates. Keep other projects on their existing runtime.
+Project synchronization installs this repository's pinned collections.
+
 ## Jobs and workflow entry points
 
 Shared defaults are mirrored in `playbooks/group_vars/rust_servers.yml` so AWX's
