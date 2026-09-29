@@ -10,12 +10,11 @@
           target_python: '{{ ansible_facts.python.version }}'
           distribution: '{{ ansible_facts.distribution }} {{ ansible_facts.distribution_version }}'
 
-    - name: Require the tested controller release series
+    - name: Require a tested controller version
       ansible.builtin.assert:
         that:
-          - ansible_version.full is version('2.20', '>=')
-          - ansible_version.full is version('2.21', '<')
-        fail_msg: Use an execution environment built with requirements-dev.txt; this project is tested with ansible-core 2.20.1.
+          - ansible_version.full in ['2.18.19', '2.20.1']
+        fail_msg: Use the tested ansible-core 2.20.1 runtime or the explicitly tested 2.18.19 compatibility runtime.
 
     - name: Check current hostname
       ansible.builtin.command: hostnamectl --static

@@ -11,8 +11,9 @@ and other host-specific settings in private AWX inventory variables. Use SSH
 (`ansible_connection: ssh`), not the Pi's local connection setting. Select an
 existing Machine credential that can connect to the Pi and become root. Preserve
 SSH host-key verification and provision trusted host keys in the execution
-environment. Use an execution environment with the tested ansible-core version
-from `requirements-dev.txt` and Python compatible with it; collection sync alone
+environment. Use an execution environment with the tested ansible-core 2.20.1
+from `requirements-dev.txt`, or 2.18.19 from `awx/requirements-compat.txt`, and a
+compatible Python version. CI tests both versions; collection sync alone
 does not upgrade the execution environment's Ansible version.
 
 Verified runtime: official `ghcr.io/ansible/community-ansible-dev-tools:v26.1.0`
@@ -25,6 +26,13 @@ ghcr.io/ansible/community-ansible-dev-tools@sha256:1cb572c1c66b8a73af9b6368e12d9
 Create a dedicated AWX execution environment with this image and select it for
 all RustberryPi job templates. Keep other projects on their existing runtime.
 Project synchronization installs this repository's pinned collections.
+
+Some custom AWX Compose deployments disable runner process isolation. In that
+case the execution worker's installed Ansible runs every job, regardless of the
+image selected in AWX. The readiness check reports the **actual** version. The
+2.18.19 compatibility runtime was tested for this deployment mode; do not assume
+that selecting the 2.20.1 image upgrades a non-isolated worker. Changing the shared
+worker or enabling container isolation is a separate infrastructure change.
 
 ## Jobs and workflow entry points
 
@@ -77,7 +85,7 @@ this public repository.
 
 ## Manual launches and schedules
 
-Run **Readiness check** first. It checks the controller release series, SSH/sudo,
+Run **Readiness check** first. It checks the actual controller version, SSH/sudo,
 hostname, DNS, 4 KB pages, running services, USB/NAS mounts, deployed world
 settings, maintenance guard and recent collector RCON health. It does not verify
 NAS write permissions, archive integrity, all deployment settings, Steam login,
