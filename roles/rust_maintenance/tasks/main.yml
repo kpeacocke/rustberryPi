@@ -48,7 +48,7 @@
 - name: Record initial service and timer states
   ansible.builtin.command:
     argv: [systemctl, show, '{{ item }}', '--property=ActiveState', --value]
-  loop: [rust-backup.timer, rust-maintenance-check.timer, rust-telemetry.service]
+  loop: [rust-backup.timer, rust-maintenance-check.timer, rust-telemetry.service, rust-watchdog.timer]
   register: rust_maintenance_initial_units
   changed_when: false
   failed_when: false
@@ -94,7 +94,7 @@
       until: rust_maintenance_background.stdout in ['inactive', 'failed']
       retries: 120
       delay: 10
-      loop: [rust-backup.service, rust-maintenance-check.service]
+      loop: [rust-backup.service, rust-maintenance-check.service, rust-watchdog.service]
 
     - name: Allow a quiet RCON interval before announcing maintenance
       ansible.builtin.pause:

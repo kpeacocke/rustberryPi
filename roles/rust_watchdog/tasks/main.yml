@@ -1,0 +1,47 @@
+---
+- name: Validate bounded recovery configuration
+  ansible.builtin.assert:
+    that:
+      - rust_watchdog_failure_threshold | int >= 1
+      - rust_watchdog_failure_threshold | int <= 10
+      - rust_watchdog_max_restarts | int >= 1
+      - rust_watchdog_max_restarts | int <= 2
+      - rust_watchdog_startup_grace | int >= 60
+      - rust_watchdog_startup_grace | int <= 3600
+      - not rust_watchdog_require_rcon | bool or rust_telemetry_enabled | default(false) | bool
+
+- name: Install bounded recovery helper
+  ansible.builtin.copy:
+    src: watchdog.py
+    dest: /usr/local/libexec/pi5-rust/watchdog.py
+    owner: root
+    group: root
+    mode: '0750'
+
+- name: Configure local recovery probes
+  ansible.builtin.copy:
+    content: >-
+      {{ {'storage_uuid': rust_storage_verified_uuid,
+          'require_rcon': rust_watchdog_require_rcon | bool,
+          'failure_threshold': rust_watchdog_failure_threshold | int,
+          'max_restarts': rust_watchdog_max_restarts | int,
+          'startup_grace': rust_watchdog_startup_grace | int} | to_nice_json }}
+    dest: /etc/rustberrypi-watchdog.json
+    owner: root
+    group: root
+    mode: '0600'
+
+- name: Install watchdog service and timer
+  ansible.builtin.template:
+    src: '{{ item }}.j2'
+    dest: '/etc/systemd/system/{{ item }}'
+    mode: '0644'
+  loop: [rust-watchdog.service, rust-watchdog.timer]
+  register: rust_watchdog_units
+
+- name: Set requested watchdog timer state
+  ansible.builtin.systemd_service:
+    name: rust-watchdog.timer
+    daemon_reload: '{{ rust_watchdog_units.changed }}'
+    enabled: '{{ rust_watchdog_enabled | bool and rust_start | bool }}'
+    state: "{{ (rust_watchdog_enabled | bool and rust_start | bool) | ternary('started', 'stopped') }}"

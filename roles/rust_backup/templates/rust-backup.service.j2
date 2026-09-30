@@ -4,6 +4,6 @@ RequiresMountsFor=/srv/rust {{ rust_backup_mount }}
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/python3 /usr/local/libexec/pi5-rust/backup.py backup --mount {{ rust_backup_mount }} --destination {{ rust_backup_destination }}
-TimeoutStartSec=3600
+ExecStart=/usr/bin/python3 /usr/local/libexec/pi5-rust/backup.py backup --mount {{ rust_backup_mount }} --destination {{ rust_backup_destination }} --health-timeout {{ rust_health_timeout | default(1800) | int }}{{ (rust_telemetry_enabled | default(false) | bool) | ternary(' --require-rcon', '') }}
+TimeoutStartSec={{ 3600 + (rust_health_timeout | default(1800) | int) + 240 }}
 UMask=0077

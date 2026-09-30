@@ -68,6 +68,40 @@ def latest_archive(destination):
     return {'archive': str(path), 'sha256': fields[0]}
 
 
+def record_status(**fields):
+    status_path = Path('/var/lib/rustberrypi-backup.json')
+    try:
+        try:
+            status = json.loads(status_path.read_text())
+        except (OSError, ValueError):
+            status = {}
+        status.update(fields)
+        temporary = status_path.with_suffix('.tmp')
+        temporary.write_text(json.dumps(status))
+        temporary.chmod(0o644)
+        temporary.replace(status_path)
+    except OSError:
+        print('Backup status could not be saved', file=sys.stderr)
+
+
+def restart_and_verify(timeout, require_rcon):
+    record_status(recovery_attempt=datetime.now(timezone.utc).timestamp(), recovery_ok=None)
+    try:
+        subprocess.run(['systemctl', 'start', 'rust.service'], check=True, timeout=30)
+        command = ['/usr/bin/python3', str(Path(__file__).with_name('health.py')), str(timeout)]
+        if require_rcon:
+            command.append('--rcon')
+        # Keep archive stdout machine-readable; failure diagnostics are redacted by health.py.
+        result = subprocess.run(command, check=False, capture_output=True, text=True, timeout=timeout + 30)
+        if result.returncode:
+            print(result.stderr[-24000:], file=sys.stderr)
+            raise RuntimeError('Archive operation finished but Rust recovery failed')
+    except (OSError, subprocess.SubprocessError, RuntimeError):
+        record_status(recovery_ok=False)
+        raise
+    record_status(recovery_ok=True, recovery_success=datetime.now(timezone.utc).timestamp())
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('operation', choices=['backup', 'restore', 'select-latest'])
@@ -77,7 +111,11 @@ def main():
     parser.add_argument('--sha256')
     parser.add_argument('--replace', action='store_true', help='Preserve existing state in a dated sibling and restore')
     parser.add_argument('--leave-stopped', action='store_true', help='Reapply configuration before starting restored Rust')
+    parser.add_argument('--health-timeout', type=int, default=1800)
+    parser.add_argument('--require-rcon', action='store_true')
     args = parser.parse_args()
+    if not 60 <= args.health_timeout <= 3600:
+        raise ValueError('Health timeout must be between 60 and 3600 seconds')
     with open('/run/lock/pi5-rust.lock', 'w') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         mounted(Path('/srv/rust'))
@@ -149,25 +187,13 @@ def main():
                     print('Restored; previous state preserved at ' + str(previous))
                 finally:
                     shutil.rmtree(stage)
-            try:
-                # Durable evidence for the local dashboard; old backups remain unknown.
-                status_path = Path('/var/lib/rustberrypi-backup.json')
-                try:
-                    status = json.loads(status_path.read_text())
-                except (OSError, ValueError):
-                    status = {}
-                status[args.operation + '_success'] = datetime.now(timezone.utc).timestamp()
-                temporary_status = status_path.with_suffix('.tmp')
-                temporary_status.write_text(json.dumps(status))
-                temporary_status.chmod(0o644)
-                temporary_status.replace(status_path)
-            except OSError:
-                print('Backup operation succeeded but telemetry evidence could not be saved', file=sys.stderr)
+            # Archive/restore evidence is independent of subsequent game recovery.
+            record_status(**{args.operation + '_success': datetime.now(timezone.utc).timestamp()})
             success = True
         finally:
             # Backup errors do not strand the game offline. Failed restore needs inspection.
             if active and (success or args.operation == 'backup') and not (args.operation == 'restore' and args.leave_stopped):
-                subprocess.run(['systemctl', 'start', 'rust.service'], check=True)
+                restart_and_verify(args.health_timeout, args.require_rcon)
 
 
 if __name__ == '__main__':

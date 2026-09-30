@@ -4,6 +4,8 @@
     that:
       - rust_backup_mount is match('^/[a-zA-Z0-9_./-]+$')
       - rust_backup_destination is match('^/[a-zA-Z0-9_./-]+$')
+      - rust_health_timeout | default(1800) | int >= 60
+      - rust_health_timeout | default(1800) | int <= 3600
 
 - name: Install backup and restore utility
   ansible.builtin.copy:
