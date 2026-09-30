@@ -93,6 +93,12 @@ class WatchdogTests(unittest.TestCase):
             watchdog.check(CONFIG)
             probe.assert_not_called()
 
+    def test_reset_fails_when_maintenance_is_active(self):
+        with tempfile.TemporaryDirectory() as folder, \
+                patch.object(watchdog, 'MAINTENANCE', Path(folder)):
+            with self.assertRaisesRegex(RuntimeError, 'maintenance is active'):
+                watchdog.check(CONFIG, reset=True)
+
     def test_lock_busy_skips_probes_and_actions(self):
         with tempfile.TemporaryDirectory() as folder, \
                 patch.object(watchdog, 'MAINTENANCE', Path(folder) / 'absent'), \
@@ -101,6 +107,14 @@ class WatchdogTests(unittest.TestCase):
                 patch.object(health, 'probe') as probe:
             watchdog.check(CONFIG)
             probe.assert_not_called()
+
+    def test_reset_fails_when_lock_is_busy(self):
+        with tempfile.TemporaryDirectory() as folder, \
+                patch.object(watchdog, 'MAINTENANCE', Path(folder) / 'absent'), \
+                patch.object(watchdog, 'LOCK', Path(folder) / 'lock'), \
+                patch.object(watchdog.fcntl, 'flock', side_effect=BlockingIOError):
+            with self.assertRaisesRegex(RuntimeError, 'another operation is active'):
+                watchdog.check(CONFIG, reset=True)
 
     def test_attempt_persisted_before_restart_and_reset_requires_health(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -165,6 +179,13 @@ class WatchdogTests(unittest.TestCase):
 
 
 class RecoveryTests(unittest.TestCase):
+    def test_recovery_status_is_in_progress_until_readiness_finishes(self):
+        with patch.object(backup, 'record_status') as record, \
+                patch.object(backup.subprocess, 'run', return_value=SimpleNamespace(returncode=0)):
+            backup.restart_and_verify(1800, True)
+            self.assertIsNone(record.call_args_list[0].kwargs['recovery_ok'])
+            self.assertTrue(record.call_args_list[-1].kwargs['recovery_ok'])
+
     def test_backup_recovery_failure_preserves_archive_evidence(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / 'status.json'

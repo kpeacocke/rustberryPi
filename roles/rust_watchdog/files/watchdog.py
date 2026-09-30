@@ -96,13 +96,19 @@ def capture(state):
 def check(config, reset=False):
     # The maintenance directory covers countdown, updates, restore and health verification.
     if MAINTENANCE.exists():
+        if reset:
+            raise RuntimeError('Cannot reset recovery limits while maintenance is active')
         return
     with LOCK.open('a') as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
+            if reset:
+                raise RuntimeError('Cannot reset recovery limits while another operation is active')
             return  # Backups, updates and lifecycle operations own this lock.
         if MAINTENANCE.exists():
+            if reset:
+                raise RuntimeError('Cannot reset recovery limits while maintenance is active')
             return
         mount = subprocess.run(['findmnt', '-n', '-o', 'UUID', '--mountpoint', '/srv/rust'],
                                capture_output=True, text=True, timeout=10, check=True)

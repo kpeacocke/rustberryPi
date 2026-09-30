@@ -85,7 +85,7 @@ def record_status(**fields):
 
 
 def restart_and_verify(timeout, require_rcon):
-    record_status(recovery_attempt=datetime.now(timezone.utc).timestamp(), recovery_ok=False)
+    record_status(recovery_attempt=datetime.now(timezone.utc).timestamp(), recovery_ok=None)
     try:
         subprocess.run(['systemctl', 'start', 'rust.service'], check=True, timeout=30)
         command = ['/usr/bin/python3', str(Path(__file__).with_name('health.py')), str(timeout)]
