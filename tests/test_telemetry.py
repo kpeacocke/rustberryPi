@@ -20,6 +20,16 @@ with patch.dict(sys.modules, {'psutil': MagicMock(), 'websocket': MagicMock()}):
 
 
 class TelemetryTests(unittest.TestCase):
+    def test_exhausted_recovery_is_urgent_even_after_manual_recovery(self):
+        suggestions = server.suggestions({'watchdog': {'blocked': True, 'status': 'healthy'}})
+        self.assertTrue(any(item['severity'] == 'urgent' and item['title'] == 'Automatic recovery exhausted'
+                            for item in suggestions))
+
+    def test_archive_success_does_not_hide_game_recovery_failure(self):
+        suggestions = server.suggestions({'maintenance': {'backup': {'backup_success': time.time(),
+                                                                   'recovery_ok': False}}})
+        self.assertTrue(any(item['title'] == 'Rust recovery after backup failed' for item in suggestions))
+
     def test_capacity_counts_five_unique_approved_friends_not_zero_public_slots(self):
         roster = ['one', 'two', 'three', 'four', 'five']
         self.assertEqual(server.player_capacity({'access_mode': 'restricted', 'allowed_players': roster,

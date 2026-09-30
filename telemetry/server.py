@@ -155,6 +155,13 @@ def suggestions(data):
     if maintenance.get('reboot_required'):
         items.append(('review', 'OS requests a reboot', 'Schedule a reboot and verify the server returns.'))
     backup = maintenance.get('backup', {})
+    if backup.get('recovery_ok') is False:
+        items.append(('urgent', 'Rust recovery after backup failed', 'The archive may be valid; inspect Rust startup and the watchdog.'))
+    watchdog = data.get('watchdog', {})
+    if watchdog.get('blocked'):
+        items.append(('urgent', 'Automatic recovery exhausted', 'Repair the game, verify readiness, then reset the watchdog.'))
+    elif watchdog.get('status') in {'unresponsive', 'restart-failed', 'restarting'}:
+        items.append(('urgent', 'Rust watchdog: ' + watchdog['status'], 'Inspect the watchdog journal and redacted diagnostics.'))
     if backup.get('service_result') not in (None, '', 'success'):
         items.append(('urgent', 'Backup service failed', 'Inspect journalctl -u rust-backup; a prior backup may still exist.'))
     if time.time() - backup.get('backup_success', 0) > 86400:
@@ -331,6 +338,10 @@ class Collector:
                 'game_query_ready': a2s_ready(),
                 'service': service, 'maintenance': maintenance, 'companion_listener': companion,
                 'events': list(self.events), 'history': list(self.history)}
+        try:
+            data['watchdog'] = json.loads(Path('/var/lib/rustberrypi-watchdog.json').read_text())
+        except (OSError, ValueError):
+            data['watchdog'] = {}
         data['access'] = player_capacity(self.config)
         data['suggestions'] = suggestions(data)
         data['allowed_players'] = self.player_history.public(self.config['show_names'], self.last_rcon == now)

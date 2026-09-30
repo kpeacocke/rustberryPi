@@ -318,6 +318,53 @@ keep backups off the Pi, and install OS security updates during maintenance with
 
 ## NAS backup and restore
 
+### Recovery after backup and detection of hangs
+
+The backup helper now waits for a real A2S response after restarting Rust. With
+telemetry enabled, the scheduled backup also requires authenticated RCON
+`serverinfo`. Archive completion and game recovery are recorded separately in
+`/var/lib/rustberrypi-backup.json`; a recovery failure fails the job without
+discarding the completed archive. The backup lifecycle lock remains held through
+readiness verification. Explicit helper calls can add `--require-rcon`.
+
+Normal `rust.yml` convergence installs and enables `rust-watchdog.timer`. Once a
+minute it checks A2S plus RCON when telemetry is enabled. Three consecutive failed
+probes trigger redacted diagnostics and one restart. A fresh startup has a
+30-minute grace period, ending early on the first healthy probe. A subsequent
+hang is therefore detected without another 30-minute grace period.
+
+At most two watchdog recovery attempts are allowed per rolling hour. A third
+request latches recovery off until an explicit reset; waiting or rebooting does
+not clear that latch. Two consecutive attempts without any healthy observation
+also exhaust recovery, even if slow startups cross the hourly boundary.
+Attempts are persisted before restart. Intentional inactive
+services, missing/wrong storage, the maintenance directory and a busy lifecycle
+lock prevent recovery. This detects hangs that `Restart=on-failure` cannot detect;
+it does not fix the underlying Rust/Steam/FEX fault.
+
+Defaults in `roles/rust_watchdog/defaults/main.yml` can be overridden privately:
+`rust_watchdog_enabled`, `rust_watchdog_failure_threshold`,
+`rust_watchdog_max_restarts` (maximum two), `rust_watchdog_startup_grace`, and
+`rust_watchdog_require_rcon`. RCON health requires telemetry configuration.
+`rust_start=false` also disables the watchdog timer for restore preparation.
+
+Deploy with your usual private inventory and variables using `playbooks/rust.yml`.
+Check `systemctl list-timers rust-watchdog.timer`,
+`journalctl -u rust-watchdog`, and `/var/lib/rustberrypi-watchdog.json`.
+The dashboard reports recovery failures and exhausted budgets. Diagnostics are
+root-only under `/var/log/rustberrypi-watchdog/`, retaining the latest ten reports.
+They omit credential-bearing lines and redact the managed RCON password.
+After repair, while the game responds to the configured probes, run:
+
+```sh
+sudo python3 /usr/local/libexec/pi5-rust/watchdog.py --reset
+```
+
+Disabling the watchdog does not reset its persistent budget. Updating helper code
+and enabling the timer do not themselves restart Rust; other changed deployment
+settings can still require a restart. Test recovery using the procedure in
+`RECOVERY_VALIDATION.md` before treating this as hardware-verified.
+
 For an existing server with telemetry and working RCON, restore the latest completed
 NAS archive and reapply current private settings in one workflow:
 

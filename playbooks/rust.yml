@@ -21,4 +21,5 @@
     - rust_backup
     - role: rust_telemetry
       when: rust_telemetry_enabled | default(false) | bool
+    - rust_watchdog
     - validation

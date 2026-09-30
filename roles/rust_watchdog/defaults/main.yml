@@ -1,0 +1,6 @@
+---
+rust_watchdog_enabled: true
+rust_watchdog_failure_threshold: 3
+rust_watchdog_max_restarts: 2
+rust_watchdog_startup_grace: 1800
+rust_watchdog_require_rcon: "{{ rust_telemetry_enabled | default(false) | bool }}"

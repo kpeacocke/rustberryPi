@@ -1,0 +1,10 @@
+[Unit]
+Description=Probe Rust readiness and request bounded recovery
+ConditionPathExists=!/var/lib/rustberrypi-maintenance
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/local/libexec/pi5-rust/watchdog.py
+TimeoutStartSec=300
+UMask=0077
+NoNewPrivileges=true
