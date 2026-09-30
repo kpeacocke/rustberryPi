@@ -123,7 +123,9 @@ def check(config, reset=False):
         capture(state)
         save(STATE, state)
         # Recheck ownership and service generation after probes/diagnostics.
-        if MAINTENANCE.exists() or health.service_status().get('InvocationID', '') != service.get('InvocationID', ''):
+        current = health.service_status()
+        if (MAINTENANCE.exists() or current.get('InvocationID', '') != service.get('InvocationID', '') or
+                current.get('ActiveState') not in {'active', 'failed'}):
             return
         if action == 'capture':
             print('Rust recovery budget exhausted; repair then run watchdog.py --reset', file=sys.stderr)

@@ -135,6 +135,34 @@ class WatchdogTests(unittest.TestCase):
             with patch.object(watchdog, 'STATE', path), self.assertRaises(ValueError):
                 watchdog.read_state()
 
+    def test_wrong_storage_prevents_recovery(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            with patch.object(watchdog, 'LOCK', root / 'lock'), \
+                    patch.object(watchdog, 'MAINTENANCE', root / 'absent'), \
+                    patch.object(watchdog.subprocess, 'run', return_value=SimpleNamespace(stdout='wrong-uuid')), \
+                    patch.object(health, 'probe') as probe:
+                with self.assertRaisesRegex(ValueError, 'UUID mismatch'):
+                    watchdog.check(CONFIG)
+                probe.assert_not_called()
+
+    def test_intentional_stop_during_probe_prevents_restart(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            state = self.ready_state()
+            state['failures'] = 2
+            (root / 'state.json').write_text(json.dumps(state))
+            with patch.object(watchdog, 'STATE', root / 'state.json'), \
+                    patch.object(watchdog, 'LOCK', root / 'lock'), \
+                    patch.object(watchdog, 'MAINTENANCE', root / 'absent'), \
+                    patch.object(watchdog, 'capture'), \
+                    patch.object(health, 'service_status', side_effect=[SERVICE, dict(SERVICE, ActiveState='inactive')]), \
+                    patch.object(health, 'probe', return_value=False), \
+                    patch.object(watchdog.subprocess, 'run', return_value=SimpleNamespace(stdout='usb-uuid')) as run:
+                watchdog.check(CONFIG)
+                self.assertFalse(any('restart' in call.args[0] for call in run.call_args_list))
+                self.assertEqual(json.loads((root / 'state.json').read_text())['attempts'], [])
+
 
 class RecoveryTests(unittest.TestCase):
     def test_backup_recovery_failure_preserves_archive_evidence(self):
