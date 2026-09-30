@@ -12,7 +12,10 @@ skip-backup option.
 | `playbooks/maintenance-os.yml` | Upgrade packages within the configured Debian repositories; reboot by default |
 | `playbooks/maintenance-fex.yml` | Build/adopt and activate an explicitly pinned FEX commit |
 | `playbooks/maintenance-all.yml` | OS, then FEX, then Rust in one maintenance window |
-| `playbooks/maintenance.yml` | Select `rust_maintenance_target`: `os`, `fex`, `rust`, or `all` |
+| `playbooks/maintenance.yml` | Select `rust_maintenance_target`: `os`, `fex`, `rust`, `os-rust`, or `all` |
+
+`os-rust` upgrades Debian packages, reboots, then checks and updates Rust in one
+maintenance window, preserving the deployed FEX version.
 
 The three component task files live under `roles/rust_maintenance/tasks/`.
 All entry points use the same outer workflow. **Do not chain the three standalone

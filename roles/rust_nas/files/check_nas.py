@@ -15,16 +15,21 @@ def check(path, expected):
     with os.scandir(path):
         pass
     result = subprocess.check_output(
-        ['findmnt', '--json', '--target', str(path), '--output', 'TARGET,SOURCE,FSTYPE'],
+        ['findmnt', '--json', '--target', str(path), '--output', 'TARGET,SOURCE,FSTYPE,MAJ:MIN'],
         text=True, timeout=35)
-    mounts = json.loads(result).get('filesystems', [])
+    device = path.stat().st_dev
+    active_device = f'{os.major(device)}:{os.minor(device)}'
+    # findmnt may return both the autofs trigger and the mounted SMB layer.
+    # Match the filesystem actually reached by stat, never just the first row.
+    mounts = [mount for mount in json.loads(result).get('filesystems', [])
+              if mount.get('maj:min') == active_device]
     if len(mounts) != 1:
         raise RuntimeError('Could not identify a single active NAS filesystem; no write attempted')
     mount = mounts[0]
     if (mount.get('fstype') != 'cifs' or mount.get('source') != expected
             or Path(mount.get('target', '/')) != path):
         raise RuntimeError('Expected SMB share is not active at the NAS mountpoint; no write attempted')
-    if path.stat().st_dev in (Path('/').stat().st_dev, Path('/srv/rust').stat().st_dev):
+    if device in (Path('/').stat().st_dev, Path('/srv/rust').stat().st_dev):
         raise RuntimeError('NAS filesystem is not separate from OS/Rust storage; no write attempted')
     # Named temporary files are portable to SMB servers without O_TMPFILE support.
     with tempfile.NamedTemporaryFile(dir=path, prefix='.rustberrypi-check-') as stream:

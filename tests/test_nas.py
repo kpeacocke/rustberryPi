@@ -14,8 +14,9 @@ class NasTests(unittest.TestCase):
     def test_unmounted_wrong_share_and_autofs_never_write(self):
         for fs, source, target in [('ext4', '/dev/root', '/'), ('autofs', 'systemd-1', '/mnt/nas'),
                                    ('cifs', '//wrong/share', '/mnt/nas')]:
-            reply = {'filesystems': [{'target': target, 'source': source, 'fstype': fs}]}
+            reply = {'filesystems': [{'target': target, 'source': source, 'fstype': fs, 'maj:min': '0:3'}]}
             with patch.object(nas.os, 'scandir') as scan, \
+                    patch.object(nas.Path, 'stat', return_value=SimpleNamespace(st_dev=3)), \
                     patch.object(nas.subprocess, 'check_output', return_value=json.dumps(reply)), \
                     patch.object(nas.tempfile, 'NamedTemporaryFile') as temporary:
                 scan.return_value.__enter__.return_value = iter([])
@@ -29,7 +30,9 @@ class NasTests(unittest.TestCase):
         scan.__enter__.side_effect = lambda: events.append('activate')
         def lookup(*args, **kwargs):
             events.append('identity')
-            return json.dumps({'filesystems': [{'target': '/mnt/nas', 'source': '//nas/share', 'fstype': 'cifs'}]})
+            return json.dumps({'filesystems': [
+                {'target': '/mnt/nas', 'source': 'systemd-1', 'fstype': 'autofs', 'maj:min': '0:32'},
+                {'target': '/mnt/nas', 'source': '//nas/share', 'fstype': 'cifs', 'maj:min': '0:3'}]})
         stream = MagicMock()
         stream.read.return_value = b'rustberryPi backup storage check'
         temporary = MagicMock()
@@ -43,3 +46,15 @@ class NasTests(unittest.TestCase):
         self.assertEqual(events, ['activate', 'identity'])
         stream.write.assert_called_once()
         temporary.__exit__.assert_called_once()
+
+    def test_expected_share_beneath_wrong_active_mount_never_writes(self):
+        reply = {'filesystems': [
+            {'target': '/mnt/nas', 'source': '//nas/share', 'fstype': 'cifs', 'maj:min': '0:3'},
+            {'target': '/mnt/nas', 'source': '//wrong/share', 'fstype': 'cifs', 'maj:min': '0:4'}]}
+        with patch.object(nas.os, 'scandir'), \
+                patch.object(nas.Path, 'stat', return_value=SimpleNamespace(st_dev=4)), \
+                patch.object(nas.subprocess, 'check_output', return_value=json.dumps(reply)), \
+                patch.object(nas.tempfile, 'NamedTemporaryFile') as temporary:
+            with self.assertRaises(RuntimeError):
+                nas.check('/mnt/nas', '//nas/share')
+            temporary.assert_not_called()
