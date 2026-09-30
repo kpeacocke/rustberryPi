@@ -1,0 +1,8 @@
+---
+# Copy to ignored inventory/host_vars/<your-host-alias>/automation.yml.
+# Keep the name stable; renaming does not revoke a previous account.
+automation_account_enabled: true
+automation_account_name: ansible
+# Paste only public keys. Empty deliberately fails before creating an account.
+automation_account_public_keys: []
+automation_account_passwordless_sudo: true

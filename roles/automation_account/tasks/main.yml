@@ -1,0 +1,79 @@
+---
+- name: Configure opted-in automation access
+  when: automation_account_enabled | bool
+  block:
+    - name: Validate automation account settings before any changes
+      ansible.builtin.assert:
+        that:
+          - automation_account_name is match('^[a-z_][a-z0-9_-]{0,30}$')
+          - automation_account_name not in ['root', 'rust']
+          - automation_account_public_keys | length > 0
+          - automation_account_passwordless_sudo | bool
+          - ansible_facts['distribution'] == 'Debian'
+        fail_msg: Supply dedicated public keys and explicitly enable passwordless sudo for this root-equivalent account.
+
+    - name: Validate public key format
+      ansible.builtin.assert:
+        that:
+          - item is match('^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp256) [A-Za-z0-9+/=]+( .*)?$')
+          - "'\n' not in item"
+      loop: "{{ automation_account_public_keys }}"
+
+    - name: Inspect existing automation account
+      ansible.builtin.getent:
+        database: passwd
+        key: "{{ automation_account_name }}"
+        fail_key: false
+
+    - name: Refuse to repurpose an existing personal or system account
+      ansible.builtin.assert:
+        that: >-
+          not ansible_facts.getent_passwd[automation_account_name] or
+          ansible_facts.getent_passwd[automation_account_name][3] == 'rustberryPi automation'
+        fail_msg: Choose a new dedicated account name; existing accounts are preserved.
+
+    - name: Install automation access prerequisites
+      ansible.builtin.apt:
+        name: [sudo, openssh-server, acl]
+        state: present
+        update_cache: true
+        cache_valid_time: 86400
+
+    - name: Create dedicated key-only automation account
+      ansible.builtin.user:
+        name: "{{ automation_account_name }}"
+        comment: rustberryPi automation
+        home: "/home/{{ automation_account_name }}"
+        shell: /bin/bash
+        password_lock: true
+        create_home: true
+
+    - name: Install the explicitly managed automation key set
+      ansible.posix.authorized_key:
+        user: "{{ automation_account_name }}"
+        key: "{{ automation_account_public_keys | join('\n') }}"
+        exclusive: true
+        key_options: no-agent-forwarding,no-port-forwarding,no-X11-forwarding
+
+    - name: Require public key authentication for automation
+      ansible.builtin.blockinfile:
+        path: /etc/ssh/sshd_config
+        insertafter: EOF
+        marker: '# {mark} rustberryPi automation authentication'
+        block: |
+          Match User {{ automation_account_name }}
+              AuthenticationMethods publickey
+              PasswordAuthentication no
+              KbdInteractiveAuthentication no
+          Match all
+        validate: /usr/sbin/sshd -t -f %s
+      notify: Reload automation SSH configuration
+
+    - name: Grant explicitly approved unattended sudo
+      ansible.builtin.copy:
+        dest: "/etc/sudoers.d/rustberrypi-{{ automation_account_name }}"
+        content: "{{ automation_account_name }} ALL=(ALL:ALL) NOPASSWD: ALL\n"
+        owner: root
+        group: root
+        mode: '0440'
+        validate: /usr/sbin/visudo -cf %s

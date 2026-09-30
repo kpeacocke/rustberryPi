@@ -1,0 +1,6 @@
+---
+automation_account_enabled: false
+automation_account_name: ansible
+automation_account_public_keys: []
+# Explicit opt-in: this grants root-equivalent unattended access.
+automation_account_passwordless_sudo: false

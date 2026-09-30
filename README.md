@@ -1,27 +1,33 @@
-# KP's Pi 5 Rust server
+# rustberryPi — Raspberry Pi 5 Rust server
 
 Ansible for one specific experiment: a Raspberry Pi 5, 16 GB RAM, Debian 13
-Trixie arm64, 4 KB Raspberry Pi kernel, FEX and a vanilla four-player Rust server.
+Trixie arm64, 4 KB Raspberry Pi kernel, FEX and a vanilla five-player Rust server.
 The OS lives on microSD; the ext4 USB labelled `RUSTSERVER` holds `/srv/rust`.
 No plugins, containers, game-server framework or scheduled game updates.
 
-**This repository is implemented and statically validated, not a claim that Rust
-has been proved playable under FEX on this Pi.** The existing host proved x86-64
-Ubuntu execution. SteamCMD, Rust startup, performance, reboot recovery and live
-idempotence still require the hardware acceptance procedure below.
+For announced update windows, see [maintenance jobs and workflows](maintenance/README.md).
+Separate OS, FEX and Rust jobs can run individually or together with one countdown,
+verified NAS backup and final game/RCON health checks. The selectable workflow also
+includes an AWX survey; FEX upgrades require an explicit pin.
+
+**The core PoC has been demonstrated on a Raspberry Pi 5:** deployment and readiness passed,
+an unchanged second run reported zero changes, and a player joined successfully.
+Startup after reboot also succeeded; the supplied log reported 216.30 seconds for
+bootstrap. Sustained performance, saved-state recovery and NAS backup/restore still
+require the hardware acceptance procedure below.
 
 ## Established host and pins
 
 | Component | Desired state |
 | --- | --- |
-| Host | `PiDesktop.local`, SSH user `kpeacocke` (edit inventory if needed) |
+| Host | `raspberrypi.example.invalid`, SSH user `piadmin` (edit inventory if needed) |
 | Kernel | `/boot/firmware/kernel8.img`; require `getconf PAGESIZE` = `4096` |
 | Observed kernel | `6.18.50+rpt-rpi-v8`; ABI version is not frozen |
 | FEX | `e2f973fe931e6dc2ce523795e51ca1ac3ca85816` / `FEX-2609-120-ge2f973fe9` |
 | RootFS | FEX Ubuntu 24.04, image dated 2026-08-11; Ubuntu 24.04.4 userspace |
 | Steam app | `258550`, public branch, anonymous login |
-| World | identity `kp-pi5`, procedural size `1500`, seed `12345`, four players |
-| Network | UDP 28015 game, UDP 28017 query; RCON loopback TCP 28016; Rust+ disabled |
+| World | identity `rustberry`, procedural size `1500`, seed `12345`, five players |
+| Network | UDP 28015 game, UDP 28017 query; RCON loopback TCP 28016; Rust+ optional TCP 28083 |
 
 RootFS SHA256:
 `2854b06d3ff1b8f6e526135bfb6dd5b7b30ab3ab73e79ae933a3d9fed959a178`.
@@ -42,8 +48,12 @@ python3 -m venv .venv
 . .venv/bin/activate
 pip install -r requirements-dev.txt
 ansible-galaxy collection install -r requirements.yml
+cp -n inventory/hosts.yml inventory/hosts.local.yml
+mkdir -p inventory/host_vars/rustpi
+cp -n inventory/server.example.yml inventory/host_vars/rustpi/settings.yml
+# Edit both private files before connecting.
 ansible-inventory --graph
-ssh kpeacocke@PiDesktop.local
+ssh piadmin@raspberrypi.example.invalid
 ```
 
 Establish and verify the SSH host key interactively first. Configure sudo on the
@@ -53,24 +63,24 @@ Python 3 and sudo, and Raspberry Pi firmware/kernel packages supplying
 `/boot/firmware/kernel8.img`. It must be the equivalent Pi-supported Debian image,
 not a generic ARM image with a different boot layout.
 
-Edit `inventory/hosts.yml` and `inventory/group_vars/rust_servers.yml`. Local
-overrides can go in ignored `inventory/host_vars/pidesktop.yml`. Discover the
+Edit ignored `inventory/hosts.local.yml`; set deployment overrides in ignored
+`inventory/host_vars/rustpi/settings.yml`. Set `rust_identity` explicitly (for example
+`rustberry` on a NEW server); preserve the old value on an existing server. Discover the
 USB UUID with `lsblk -f` and set `rust_storage_uuid` for stronger identification.
-No network address or NAS credentials beyond the conversation's host example are
-assumed. Inventory settings apply to both existing and fresh hosts.
+The tracked addresses and usernames are placeholders; supply your own values. Inventory settings apply to both existing and fresh hosts.
 
 ## Converge the current Pi
 
 Read-only preflight:
 
 ```sh
-ansible pidesktop -m ansible.builtin.ping
-ansible pidesktop -b -m ansible.builtin.command -a 'getconf PAGESIZE'
-ansible pidesktop -b -m ansible.builtin.command -a 'lsblk -f'
-ansible pidesktop -b -m ansible.builtin.command -a '/usr/bin/FEXGetConfig --version'
+ansible rustpi -m ansible.builtin.ping
+ansible rustpi -b -m ansible.builtin.command -a 'getconf PAGESIZE'
+ansible rustpi -b -m ansible.builtin.command -a 'lsblk -f'
+ansible rustpi -b -m ansible.builtin.command -a '/usr/bin/FEXGetConfig --version'
 ansible-playbook playbooks/rust.yml --syntax-check
-ansible-playbook playbooks/rust.yml --limit pidesktop --diff
-ansible-playbook playbooks/rust.yml --limit pidesktop --diff
+ansible-playbook playbooks/rust.yml --limit rustpi --diff
+ansible-playbook playbooks/rust.yml --limit rustpi --diff
 ```
 
 Expect `changed=0` on the second run while settings, packages and runtime state
@@ -102,10 +112,9 @@ SteamCMD → Rust/service/firewall → backup hooks → A2S game readiness. A sm
   version is preserved and the exact source/submodules are built with Clang, Qt5
   and QtQml into `/opt/fex/<commit>`. Service configuration selects that path.
 - The RootFS manifest checks every expected directory, symlink and file digest.
-  A matching manual extraction at
-  `/home/kpeacocke/.fex-emu/RootFS/Ubuntu_24_04` is copied into the managed versioned
-  location, preserving the original. Set `fex_existing_rootfs` if its actual name
-  differs. This avoids granting the service access through a private home directory.
+  A matching manual extraction specified by `fex_existing_rootfs` is copied into
+  the managed versioned location, preserving the original. The default does not
+  search personal home directories. This avoids granting the service access through a private home directory.
   Otherwise the checksum-pinned image is extracted to staging and verified before
   activation. A corrupt existing managed tree fails for review without deletion;
   select a new versioned `fex_rootfs_path` to repair it while retaining the old tree.
@@ -129,7 +138,7 @@ Normal rebuilds **never format**. For a newly partitioned USB only, inspect
 `lsblk -f` and use a stable `/dev/disk/by-id/...-part1` path:
 
 ```sh
-ansible-playbook playbooks/bootstrap.yml --limit pidesktop \
+ansible-playbook playbooks/bootstrap.yml --limit rustpi \
   -e rust_storage_initialise=true \
   -e rust_storage_device=/dev/disk/by-id/REPLACE_WITH_USB_ID-part1
 ```
@@ -151,7 +160,7 @@ outside v1.
     server -> /srv/rust/data
   data/
     deployment.json         # identity, world parameters, UID and emulator pins
-    kp-pi5/                 # worlds, players, cfg, bans, owners, etc.
+    rustberry/                 # worlds, players, cfg, bans, owners, etc.
 ```
 
 The service requires the mount and verifies its UUID before every start. The
@@ -177,9 +186,9 @@ the symlink. Never overlay two different worlds by guessing which wins.
 ## Updates, service and network
 
 ```sh
-ansible-playbook playbooks/rust.yml --limit pidesktop -e rust_update=true
-ssh kpeacocke@PiDesktop.local 'sudo systemctl status rust'
-ssh kpeacocke@PiDesktop.local 'sudo journalctl -u rust -n 100 --no-pager'
+ansible-playbook playbooks/rust.yml --limit rustpi -e rust_update=true
+ssh piadmin@raspberrypi.example.invalid 'sudo systemctl status rust'
+ssh piadmin@raspberrypi.example.invalid 'sudo journalctl -u rust -n 100 --no-pager'
 ```
 
 An explicit update fetches Steam's public build ID. If it matches, the server is
@@ -194,22 +203,151 @@ Rust forced wipes and protocol changes are upstream behavior; backups do not mak
 old saves compatible with every new release.
 
 The systemd unit restarts on failure with rate limits. Configuration changes trigger
-restart; ordinary convergence does not. First map generation under emulation may
+restart; ordinary convergence does not. Unity uses `-logFile -` to write directly to the console captured by
+journald, avoiding attempts to reopen `/dev/stdout` as a regular file. An explicit
+deployment start/restart clears a failed service's start-limit state before retrying;
+automatic crash restarts remain rate-limited. First map generation under emulation may
 be slow: readiness waits up to 30 minutes for a real A2S_INFO UDP response, including
 Steam's challenge exchange. `systemctl active` alone is not considered readiness.
-Join from a client with `connect PI_ADDRESS:28015`. Confirm four-player capacity,
+The check fails early if the service stops or repeatedly restarts and includes
+service status and the last 100 journal lines in its error. Override
+`rust_health_timeout` only when logs show legitimate slow startup; a longer timeout
+does not repair a crashed server.
+Join from a client with `connect PI_ADDRESS:28015`. Confirm configured player capacity,
 save/restart behavior, CPU temperature, memory and playability before relying on it.
 
-Default firewall management is off to preserve the Pi's other jobs. Permit UDP
-28015 and 28017 in the existing host/LAN firewall. If explicitly enabling
-`rust_manage_firewall`, this project installs UFW, allows the configured SSH port,
-allows the two UDP ports from `rust_client_cidr` and enables incoming deny policy.
-Review existing UFW/nftables rules and other services before enabling it. Rules
-already present are preserved, so inspect actual exposure. Router forwarding and
-Internet access are not configured. RCON is loopback-only and Rust+ is disabled;
+Default firewall management is off until explicitly configured. Permit UDP
+28015 and 28017 in the existing host/LAN firewall. When `rust_manage_firewall` is
+enabled, the security role installs UFW, allows SSH only from
+`rust_ssh_allowed_networks`, allows the two UDP ports from `rust_client_cidr`,
+and enables incoming/routed deny with outbound allow. It also disables direct root
+and empty-password SSH login. Review existing rules before enabling it: the old
+unrestricted SSH rule is removed, but unrelated existing rules are preserved.
+Inspect the printed effective rules rather than assuming default-deny removes
+previous allowances. Router forwarding and
+Internet access are not configured. RCON is loopback-only and Rust+ is disabled by default;
 do not forward TCP 28016.
 
+Rust+ is disabled by default using `+app.port 1-`, Facepunch's command-line spelling of -1;
+zero does not disable the companion listener. See the
+[official Rust+ server guide](https://wiki.facepunch.com/rust/rust-companion-server).
+An early Steam interface warning or slow IPC call is not by itself evidence of a
+failed server: check subsequent Steam initialization/connection, readiness and
+client joins. Repeated warnings during play or connection failures need separate
+investigation; logs are not filtered or suppressed.
+
+### Enable Rust+ through your public WAN
+
+Set `rust_plus_enabled: true` in an ignored host-variable file under
+`inventory/host_vars/rustpi/`. The default `rust_plus_port` is TCP 28083.
+Reserve the Pi's LAN address and route its outbound IPv4 traffic through the same
+public WAN used for forwarding. Verify `curl -4 https://api.ipify.org` matches that
+WAN's current address. Forward **TCP 28083 to the Pi TCP 28083**, then rerun the normal playbook.
+This changes the service and restarts the game. No public IP is hardcoded into the
+repository; correct outbound routing lets Rust discover the public address.
+
+If `rust_manage_firewall` is already enabled, the role allows the companion TCP
+port from any source while Rust+ is enabled and removes that allowance when disabled.
+Otherwise allow that TCP port in the existing host firewall if one is active.
+Changing the companion port requires removing any old forwarding/firewall rule.
+Router configuration and NetworkManager DNS settings remain operator-managed.
+Enabling UFW also applies the incoming-deny policy to other services; the public
+profile below is intended for a Pi accepting SSH and Rust/Rust+ connections,
+with Raspberry Pi Connect supported through outbound connections.
+
+Raspberry Pi Connect needs no additional inbound UFW rule or router port forward.
+The profile allows outbound connections and their replies, including Connect's
+HTTPS and STUN/TURN traffic. It should therefore preserve an existing Connect
+installation; account linking and installation are not managed by this project.
+After applying the firewall, run `rpi-connect status` and `rpi-connect doctor`
+as your normal signed-in user (without sudo), then test a new Connect session
+from outside your LAN. Keep your current administrative session open until this
+and a second LAN SSH connection work. See the
+[official Connect documentation](https://www.raspberrypi.com/documentation/services/connect.html).
+
+Validation checks the local companion TCP listener after game readiness, but cannot
+prove WAN forwarding or app pairing. Check the current startup journal for companion
+connectivity errors, then pair from Rust's in-game Rust+ menu and verify the phone
+app over mobile data. Keep `companion.id` in the identity directory: it is covered
+by the existing data backup. Disable by setting `rust_plus_enabled: false` and
+rerunning; pairing identity is preserved.
+
+### Secure the public Pi
+
+The example management LANs are placeholders. Replace them with your trusted
+LAN/VPN networks, including the AWX execution host source address.
+The public profile opens UDP 28015/28017 and TCP 28083, and restricts TCP 22 to
+those LANs. UFW filters both IPv4 and IPv6; gameplay is permitted over IPv4 by
+this profile. Return traffic, loopback and UFW's standard infrastructure allowances
+(for example DHCP and necessary ICMP) remain available. No RCON port is opened.
+The Pi is not used as a router: forwarded traffic is denied.
+
+```sh
+cd ~/rustberryPi
+source .venv/bin/activate
+git pull --ff-only
+ansible-galaxy collection install -r requirements.yml
+mkdir -p inventory/host_vars/rustpi
+cp -n inventory/public-server.example.yml inventory/host_vars/rustpi/public-server.yml
+ansible-playbook playbooks/secure.yml --limit rustpi --connection local \
+  --ask-become-pass -e ansible_python_interpreter=/usr/bin/python3
+sudo ufw status verbose
+```
+
+If the profile file already exists, inspect it: `cp -n` deliberately preserves it.
+Existing host variables override group defaults. `secure.yml` needs
+`rust_manage_firewall: true`; it skips the role if this is false. The normal Rust
+playbook also converges this security role once opted in. The security-only play
+does not update, start or restart Rust. It does not enable a Rust+ listener by
+itself: run the full play if you have not yet enabled that service option.
+
+Run while connected from one of the allowed LANs, keep the session open, then test
+a **second SSH session** before closing the first. The role validates the current
+SSH peer when available and refuses to exclude it. A local console has no SSH peer;
+in that case verify the allowlist yourself. It validates sshd configuration before
+reloading and installs SSH allowances before enabling UFW. Non-root password login
+is left unchanged until key access has been verified. Do not forward SSH/RCON on
+your router. External players and Rust+ should be tested from another network.
+
+This is a host firewall and SSH baseline, not protection against every game bug or
+an attack saturating the internet connection. Rust already runs as an unprivileged user
+with no-new-privileges and systemd filesystem protections. Avoid arbitrary plugins,
+keep backups off the Pi, and install OS security updates during maintenance with
+`sudo apt update` then `sudo apt upgrade`. Kernel updates may need a reboot and a
+4096-byte page-size check. Automated OS upgrades/reboots are not introduced here.
+
 ## NAS backup and restore
+
+For an existing server with telemetry and working RCON, restore the latest completed
+NAS archive and reapply current private settings in one workflow:
+
+```bash
+ansible-playbook playbooks/restore-latest.yml \
+  -e @inventory/host_vars/YOUR_HOST/99-access.yml \
+  -e rust_restore_confirm=true -e rust_restore_replace=true \
+  -e rust_telemetry_enabled=true -e rust_start=true
+```
+
+Use the same inventory, connection and become options as normal convergence. The
+latest archive is selected by the UTC timestamp in its filename, and pinned before
+any downtime. Only completed archives with checksum sidecars are candidates; a
+corrupt latest completed archive aborts rather than silently restoring an older
+world. The checksum, archive contents and NAS mount are checked first. Connected
+players get the usual ten-minute warning (`rust_maintenance_warning_seconds`).
+Current data is retained at `/srv/rust/data.pre-restore-TIMESTAMP`; extra free USB
+space is required. This is an actual rollback of world/player progress, not a test.
+
+The workflow restores while leaving Rust stopped, then runs normal convergence to
+reapply **current private player/admin settings**, credentials and telemetry state
+permissions. Finally it checks game and RCON readiness and clears the historical
+restart counter. Restore timestamps reflect the file operation; game health is
+verified separately. Keep the same private identity, seed, world size and UID.
+If configuration/health checks fail after restoring, the maintenance window remains
+at `/var/lib/rustberrypi-maintenance`. Inspect and fix the failure, rerun `rust.yml`
+with the same private variables, and only after health checks pass remove the empty
+window with `sudo rmdir /var/lib/rustberrypi-maintenance`. Do not rerun the restore
+merely to retry configuration. The previous world is never automatically deleted.
+
 
 Mount a NAS share separately at `/mnt/nas` using your existing NFS/SMB setup.
 Credentials and share provisioning are deliberately outside this repository.
@@ -218,7 +356,7 @@ paths. The helper requires a real, separate mount and a destination beneath it;
 it refuses to quietly write backups to microSD when the NAS is absent.
 
 ```sh
-ansible-playbook playbooks/backup.yml --limit pidesktop
+ansible-playbook playbooks/backup.yml --limit rustpi
 ```
 
 The one-shot service locks against updates/restores, stops Rust gracefully, verifies
@@ -291,3 +429,199 @@ Review SteamCMD bootstrap checksum changes rather than disabling verification.
 - [FEX RootFS image](https://rootfs.fex-emu.gg/Ubuntu_24_04/2026-08-11/Ubuntu_24_04.sqsh)
 - [Facepunch server setup and ports](https://wiki.facepunch.com/rust/Creating-a-server)
 - [Valve SteamCMD](https://developer.valvesoftware.com/wiki/SteamCMD)
+
+## Accounts and AWX
+
+`rust` is the non-login, password-locked game account. It owns the persistent game
+layout and has no sudo grant from this project. Keep `rust_uid` stable. Optional
+`rust_gid` pins the group explicitly; otherwise the role adopts the current Rust
+group or the persistent home directory GID, falling back to `rust_uid` on a fresh
+disk. Existing UID/GID mismatches stop deployment rather than rewriting ownership.
+A conflicting numeric ID used by another account must be resolved by the operator.
+Back up private inventory as well as game state before reimaging.
+
+Your personal administrator account and Raspberry Pi Connect remain separate.
+The automation account is opt-in and has root-equivalent sudo. It uses public-key
+SSH only; it does not own the game. Provision it using your existing administrator:
+
+1. Generate a dedicated SSH key on your controller, or obtain your AWX public key.
+   Keep its private key outside this repository, including ignored files.
+2. Copy `inventory/automation.example.yml` to your ignored host-vars directory.
+   Add the public key to `automation_account_public_keys`; the empty list fails
+   before creating anything. Review the explicit passwordless-sudo setting.
+3. Run `ansible-playbook playbooks/accounts.yml --ask-become-pass` with your current
+   inventory. This does not update or restart Rust.
+4. Keep the current session open. Test a new SSH connection using the dedicated key
+   and `sudo -n true`. The management firewall must allow the controller/execution
+   node's actual source address over your LAN or VPN.
+5. In AWX, create a Machine Credential with username `ansible`, that private key,
+   privilege escalation method `sudo` and escalation user `root`. Configure the
+   inventory host's real address and variables, and set `ansible_user: ansible`
+   (a personal username in inventory overrides the credential's username).
+   Use `playbooks/rust.yml` and install this repository's pinned requirements in
+   the execution environment. Verify SSH host keys; do not disable checking.
+
+The account key list is authoritative: keep both keys in the list during rotation,
+test the new key, then remove the old key. Disabling the role or changing the
+account name does **not** revoke a previously provisioned account. Revoke its keys
+and sudo grant explicitly when retiring it. The role refuses to repurpose an
+existing account unless it carries this project's automation account marker.
+
+AWX can supply variables directly; it does not need your local inventory file.
+Do not put private keys, passwords, NAS credentials, public IPs or personal
+inventory into the public project. Keep operational inventory in AWX or a separate
+private repository, and use Vault or AWX credentials for secrets.
+
+## Migrating from the original personal inventory
+
+Before pulling this update, preserve your tracked inventory and group variables
+outside the checkout. After pulling, the generic inventory deliberately cannot
+connect anywhere: `ansible.cfg` now uses ignored `inventory/hosts.local.yml`.
+The old host alias must remain unchanged so existing host vars still apply.
+
+If you pulled directly from an earlier version, run:
+
+```sh
+python tools/migrate_inventory.py --ref ORIG_HEAD
+ansible-inventory --graph
+```
+
+This reads the pre-pull commit, writes ignored local inventory and per-host
+settings without overwriting existing files, and preserves the world identity,
+UID, network settings and manual RootFS adoption path. Inspect the private results
+before deploying. If `ORIG_HEAD` is not the intended old version, supply its commit
+ID instead. This helper is for existing installations, not new deployments.
+Existing `host_vars/<alias>.yml` must first be moved into a `<alias>/` directory
+as `settings.yml` so both old overrides and the migration file can load.
+
+New users copy `inventory/hosts.yml` to `inventory/hosts.local.yml`, replace its
+placeholder address/user, and set a nonempty `rust_identity` in ignored host vars.
+For the firewall, explicitly supply trusted management networks. The example
+subnets are documentation values, not inferred network access permissions.
+
+The current source tree contains generic examples. Earlier Git commits may retain
+original operational examples and author metadata; a source cleanup does not
+anonymize repository history or its GitHub owner. Do not interpret this as a
+promise that already-public information has been erased.
+
+## License
+
+Project automation is MIT licensed. FEX, Ubuntu and Rust/Steam retain their own
+licenses and terms; no license to redistribute their binaries is granted here.
+
+## Public or friends-only access
+
+`rust_access_mode` accepts `public`, `restricted`, or `preserve` (the default).
+Public means any authenticated Steam player; Steam authentication is never disabled.
+Restricted requires `rust_allowed_players`, a YAML list or comma/newline-separated
+text containing one to five SteamID64 values or numeric Steam profile URLs. Vanity
+links must first be resolved to numeric IDs. Store actual IDs in ignored host vars
+or AWX inventory/survey answers, never in the public project.
+
+For an interactive CLI deployment:
+
+```sh
+ansible-playbook playbooks/rust-survey.yml --ask-become-pass
+```
+
+The wrapper asks for public/restricted, then asks for IDs if restricted and none
+were supplied. For local execution on the Pi add `--connection local` and
+`-e ansible_python_interpreter=/usr/bin/python3` as usual. Noninteractive/AWX runs
+use `playbooks/rust.yml`, supplying the same variables through inventory or survey.
+
+### AWX survey
+
+`awx/survey.json` is a ready survey specification for a job template using
+`playbooks/rust.yml`. In the AWX API, POST that JSON to
+`/api/v2/job_templates/<template-id>/survey_spec/`, then PATCH the job template with
+`{"survey_enabled": true}`. Alternatively recreate its three questions in the Survey
+editor. Use your existing authenticated AWX session or API tooling; no controller
+URL or token is stored here. No AWX instance has been configured by this repository.
+
+The choice defaults to restricted. The textarea remains visible for both choices;
+AWX does not conditionally show it here. It is optional in the UI so public mode
+can leave it empty, but restricted mode rejects an empty/malformed list. Survey
+answers override inventory values for that run. Restrict access to AWX job details:
+survey IDs are operational data, not secret credentials, and may appear in AWX.
+
+### Behaviour and limits
+
+This uses Facepunch's documented vanilla method: `server.maxplayers=0` plus
+`skipqueueid` entries in the persistent identity's `cfg/users.cfg`. The approved
+list is limited to five, replacing the ordinary public-slot limit. Join permission alone grants no admin rights. When administrator management is
+left at `preserve`, existing owners/moderators outside the approved list cause a
+failure for explicit review because admins bypass the queue. Bans are preserved.
+Unknown users.cfg commands and conflicting server.cfg capacity settings also fail
+for review. The approved list replaces all skipqueue entries, so removing an ID
+revokes its queue access. A pre-management users.cfg copy is retained privately.
+
+Changes stop Rust gracefully under the maintenance lock before editing its files,
+then the normal handlers restart it. Expect players to disconnect and a normal
+startup delay. Repeated unchanged policies do not stop/restart the service, even
+if Rust reformats the skipqueue names. The world/player data is preserved.
+
+The selected policy is stored in `/srv/rust/data/access.json`, included in backups.
+Default `preserve` reuses it on subsequent runs and microSD rebuilds; it never
+silently reopens an already restricted deployment. New deployments with no saved
+policy default to public unless you explicitly choose restricted. Explicit public
+mode removes queue entries but retains existing admin/ban records.
+
+After deployment, test an approved player's join and an unapproved player's
+rejection. A2S readiness only proves the server responds, not admission enforcement.
+The server can still be discoverable; this restricts joining, not listing or packet
+exposure. The native method is documented at:
+https://wiki.facepunch.com/rust/Creating_a_hidden_whitelisted_server
+
+### Game administrator question
+
+The CLI wrapper and AWX survey also ask who may administer Rust. Set
+`rust_admin_players` to numeric SteamID64 values (YAML list or comma/newline text).
+These users receive full Rust `ownerid` rights, not Linux/SSH/sudo permissions.
+In restricted mode each administrator must also appear in `rust_allowed_players`.
+
+An explicit list is authoritative: it replaces all existing owner/moderator entries
+with the selected owners. Blank text or `[]` removes all game administrators.
+The literal `preserve` (the noninteractive default and AWX question default) retains
+the persisted managed admin list, or preserves existing entries on older deployments
+that have never managed admins. Ordinary unattended runs therefore retain the
+selected admins. Removing a player who is still a managed admin fails until the
+admin list is also updated.
+
+Enter only your own SteamID64 to make yourself the sole admin. Keep this setting
+in ignored private host vars or AWX; public examples never contain real IDs.
+Changing administrator rights triggers the same graceful stop/restart as player
+access changes. Reconnect after deployment to refresh your game authorization.
+
+## Optional three-screen dashboards
+
+The separate `dashboard/` and `telemetry/` directories provide local-only,
+read-only views for the game/player list, touchscreen overview, and Pi health /
+maintenance suggestions. See [deployment and security](telemetry/README.md) and
+[display setup](dashboard/README.md). Enable `rust_telemetry_enabled: true` in
+private host vars and run the full play, or deploy `playbooks/telemetry.yml` to an
+already configured server. Initial setup configures authenticated local RCON and
+restarts Rust once; subsequent unchanged deployment does not restart the game.
+No new public ports are opened. Update probes inspect available versions and
+refresh package indexes; they never install game or OS updates.
+
+## Linux hostname and inventory name
+
+`rust_system_hostname` sets the running/persistent Linux hostname and Debian
+loopback hosts entry. It is optional and independent of `rust_identity`, which
+selects the saved Rust world. Do not change the world identity to rename the Pi.
+
+To rename a host in this repository's private directory-based inventory:
+
+```bash
+python tools/rename_inventory_host.py --address YOUR_PI_IP --name rustberrypi
+ansible-playbook playbooks/hostname.yml --limit rustberrypi --ask-become-pass
+```
+
+On the Pi itself, add `--connection local -e ansible_python_interpreter=/usr/bin/python3`.
+The helper preserves host variables, changes the inventory alias by matching its
+address, and saves the original inventory in ignored `host_vars/.rename-backups`.
+It refuses ambiguous addresses or an existing destination rather than merging.
+Use `inventory/host_vars/rustberrypi/` and `--limit rustberrypi` afterwards.
+For AWX, rename the host in its inventory and set `rust_system_hostname` there;
+local inventory files are separate from AWX. The hostname playbook does not
+restart Rust or alter the desktop login account, world identity or player state.

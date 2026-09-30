@@ -1,0 +1,11 @@
+[Unit]
+Description=Periodic Rust maintenance visibility
+
+[Timer]
+OnBootSec=3min
+OnCalendar={{ rust_telemetry_check_schedule }}
+RandomizedDelaySec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

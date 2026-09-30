@@ -1,0 +1,14 @@
+[Unit]
+Description=Check package and Rust updates without installing them
+After=network-online.target
+Wants=network-online.target
+RequiresMountsFor=/srv/rust
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/rustberrypi/telemetry/maintenance.py
+TimeoutStartSec=900
+Nice=15
+IOSchedulingClass=idle
+PrivateTmp=true
+UMask=0022

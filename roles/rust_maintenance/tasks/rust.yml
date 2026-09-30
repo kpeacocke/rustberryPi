@@ -1,0 +1,10 @@
+---
+- name: Check Steam public build and update only when needed
+  ansible.builtin.command:
+    argv: [python3, /usr/local/libexec/pi5-rust/steam_manage.py,
+           '{{ rust_maintenance_runtime.rootfs }}', '{{ rust_maintenance_runtime.fex }}',
+           '{{ rust_maintenance_runtime.uuid }}', update]
+  register: rust_maintenance_steam
+  async: 7500
+  poll: 15
+  changed_when: "'updated' in rust_maintenance_steam.stdout"

@@ -1,4 +1,9 @@
 ---
+- name: Require an explicit persistent server identity
+  ansible.builtin.assert:
+    that: rust_identity is match('^[a-zA-Z0-9_-]+$')
+    fail_msg: Set rust_identity in private host vars; preserve the existing identity when migrating.
+
 - name: Require the supported operating system
   ansible.builtin.assert:
     that:

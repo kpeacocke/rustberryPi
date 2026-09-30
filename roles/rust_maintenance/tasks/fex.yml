@@ -1,0 +1,28 @@
+---
+- name: Build and verify deliberately selected FEX revision
+  ansible.builtin.include_role:
+    name: fex
+  vars:
+    fex_commit: '{{ rust_maintenance_fex_commit }}'
+    fex_version: '{{ rust_maintenance_fex_version }}'
+    fex_rootfs_path: '{{ rust_maintenance_runtime.rootfs }}'
+    fex_cleanup_tmp: false
+
+- name: Activate verified FEX while preserving other service settings
+  ansible.builtin.command:
+    argv: [python3, /usr/local/libexec/pi5-rust/maintenance.py, activate-fex,
+           --commit, '{{ rust_maintenance_fex_commit }}', --version, '{{ rust_maintenance_fex_version }}']
+  changed_when: true
+
+- name: Reload updated game unit
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+
+- name: Inspect newly activated runtime
+  ansible.builtin.command: /usr/bin/python3 /usr/local/libexec/pi5-rust/maintenance.py inspect
+  register: rust_maintenance_fex_runtime
+  changed_when: false
+
+- name: Select verified FEX for subsequent Rust update
+  ansible.builtin.set_fact:
+    rust_maintenance_runtime: '{{ rust_maintenance_fex_runtime.stdout | from_json }}'

@@ -1,0 +1,7 @@
+---
+- name: Secure the public Rust host without updating or restarting the game
+  hosts: rust_servers
+  become: true
+  roles:
+    - role: rust_security
+      when: rust_manage_firewall | bool

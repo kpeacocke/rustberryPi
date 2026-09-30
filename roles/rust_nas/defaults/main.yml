@@ -1,0 +1,5 @@
+---
+rust_nas_enabled: false
+rust_nas_server: ''
+rust_nas_share: rust-backups
+rust_nas_credentials: /etc/rustberrypi-nas/credentials

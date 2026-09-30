@@ -1,0 +1,6 @@
+---
+- name: Configure dedicated NAS backup storage
+  hosts: rust_servers
+  become: true
+  roles:
+    - rust_nas

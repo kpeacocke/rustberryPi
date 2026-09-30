@@ -30,6 +30,28 @@ steam = load('steam', 'roles/rust_server/files/steam_manage.py')
 backup = load('backup', 'roles/rust_backup/files/backup.py')
 health = load('health', 'roles/rust_server/files/health.py')
 service = load('service', 'roles/rust_server/files/service_state.py')
+firewall = load('firewall', 'roles/rust_security/files/preflight.py')
+
+
+class FirewallTests(unittest.TestCase):
+    def test_current_lan_session_allowed(self):
+        firewall.validate(['10.20.0.0/24', '10.30.0.0/24'], '10.30.0.20 53000 10.20.0.50 22', 22)
+
+    def test_console_allowed(self):
+        firewall.validate(['10.20.0.0/24'], '', 22)
+
+    def test_unlisted_peer_refused(self):
+        with self.assertRaisesRegex(ValueError, 'outside'):
+            firewall.validate(['10.20.0.0/24'], '10.30.0.20 53000 10.20.0.50 22', 22)
+
+    def test_wrong_ssh_port_refused(self):
+        with self.assertRaisesRegex(ValueError, 'different server port'):
+            firewall.validate(['10.20.0.0/24'], '10.20.0.20 53000 10.20.0.50 2222', 22)
+
+    def test_global_or_empty_allowlist_refused(self):
+        for networks in [[], ['0.0.0.0/0'], ['::/0'], ['8.8.8.0/24']]:
+            with self.subTest(networks=networks), self.assertRaises(ValueError):
+                firewall.validate(networks, '', 22)
 
 
 class ServiceTests(unittest.TestCase):
@@ -39,9 +61,16 @@ class ServiceTests(unittest.TestCase):
             self.assertEqual(run.call_count, 1)
 
     def test_start_when_stopped(self):
-        with tempfile.TemporaryFile(mode='w') as lock, patch('builtins.open', return_value=lock), patch.object(service.subprocess, 'run', side_effect=[SimpleNamespace(returncode=3), SimpleNamespace(returncode=0)]) as run:
+        with tempfile.TemporaryFile(mode='w') as lock, patch('builtins.open', return_value=lock), patch.object(service.subprocess, 'run', side_effect=[SimpleNamespace(returncode=3), SimpleNamespace(returncode=1), SimpleNamespace(returncode=0)]) as run:
             service.main('start')
             self.assertEqual(run.call_args.args[0], ['systemctl', 'start', 'rust.service'])
+
+    def test_failed_service_reset_precedes_explicit_retry(self):
+        for action in ['start', 'restart']:
+            with self.subTest(action=action), tempfile.TemporaryFile(mode='w') as lock, patch('builtins.open', return_value=lock), patch.object(service.subprocess, 'run', side_effect=[SimpleNamespace(returncode=3), SimpleNamespace(returncode=0), SimpleNamespace(returncode=0), SimpleNamespace(returncode=0)]) as run:
+                service.main(action)
+                commands = [call.args[0] for call in run.call_args_list]
+                self.assertEqual(commands[-2:], [['systemctl', 'reset-failed', 'rust.service'], ['systemctl', action, 'rust.service']])
 
     def test_invalid_action(self):
         with self.assertRaises(ValueError):
@@ -214,7 +243,7 @@ class SteamTests(unittest.TestCase):
 
 class BackupTests(unittest.TestCase):
     def test_safe_member(self):
-        backup.validate_members([tarfile.TarInfo('data/kp-pi5/player.db')])
+        backup.validate_members([tarfile.TarInfo('data/rustberry/player.db')])
 
     def test_unsafe_paths(self):
         for name in ['/etc/passwd', 'data/../../escape', 'other/file']:
@@ -230,6 +259,34 @@ class BackupTests(unittest.TestCase):
 
 
 class HealthTests(unittest.TestCase):
+    def test_failed_service_stops_without_waiting(self):
+        with patch.object(health, 'service_status', return_value={'ActiveState': 'failed'}), patch.object(health, 'query') as query:
+            with self.assertRaisesRegex(RuntimeError, 'not running'):
+                health.wait_ready(1800)
+            query.assert_not_called()
+
+    def test_healthy_service_and_query_pass(self):
+        with patch.object(health, 'service_status', return_value={'ActiveState': 'active', 'NRestarts': '0'}), patch.object(health, 'query', return_value=True):
+            health.wait_ready(1800)
+
+    def test_restart_loop_stops_early(self):
+        states = [{'ActiveState': 'activating', 'NRestarts': str(n)} for n in range(4)]
+        with patch.object(health, 'service_status', side_effect=states), patch.object(health, 'query', return_value=False), patch.object(health.time, 'sleep'):
+            with self.assertRaisesRegex(RuntimeError, 'repeatedly restarted'):
+                health.wait_ready(1800)
+
+    def test_timeout_keeps_failure(self):
+        with self.assertRaisesRegex(RuntimeError, 'timed out'):
+            health.wait_ready(0)
+
+    def test_diagnostics_include_journal_even_when_status_exits_nonzero(self):
+        outputs = [SimpleNamespace(stdout='failed status', stderr='', returncode=3),
+                   SimpleNamespace(stdout='actual startup error', stderr='', returncode=0)]
+        with patch.object(health.subprocess, 'run', side_effect=outputs):
+            message = health.diagnose('not ready')
+        self.assertIn('failed status', message)
+        self.assertIn('actual startup error', message)
+
     def test_challenge_round_trip(self):
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as server:
             server.bind(('127.0.0.1', 0))

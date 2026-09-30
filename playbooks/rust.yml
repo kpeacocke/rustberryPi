@@ -1,5 +1,5 @@
 ---
-- name: Converge KP Raspberry Pi Rust server
+- name: Converge Raspberry Pi Rust server
   hosts: rust_servers
   become: true
   pre_tasks:
@@ -8,11 +8,17 @@
         that: not ansible_check_mode
         fail_msg: Use syntax-check and the documented read-only preflight; full check mode cannot simulate mounts or FEX.
   roles:
+    - automation_account
     - prerequisites
+    - rust_hostname
     - raspberry_pi
     - rust_storage
     - fex
     - steamcmd
     - rust_server
+    - role: rust_nas
+      when: rust_nas_enabled | default(false) | bool
     - rust_backup
+    - role: rust_telemetry
+      when: rust_telemetry_enabled | default(false) | bool
     - validation

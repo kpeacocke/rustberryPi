@@ -1,0 +1,24 @@
+---
+- name: Validate optional Linux hostname
+  ansible.builtin.assert:
+    that:
+      - rust_system_hostname is string
+      - rust_system_hostname | length == 0 or rust_system_hostname is match('^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$')
+    fail_msg: Use a short lowercase Linux hostname, separate from the Rust world identity.
+
+- name: Apply the requested Linux hostname
+  when: rust_system_hostname | length > 0
+  block:
+    - name: Set persistent and running hostname
+      ansible.builtin.hostname:
+        name: '{{ rust_system_hostname }}'
+        use: systemd
+
+    - name: Resolve the local hostname on Debian loopback
+      ansible.builtin.lineinfile:
+        path: /etc/hosts
+        regexp: '^127\.0\.1\.1\s+'
+        line: '127.0.1.1 {{ rust_system_hostname }}'
+        owner: root
+        group: root
+        mode: '0644'

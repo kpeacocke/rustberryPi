@@ -1,0 +1,6 @@
+---
+- name: Add local dashboards to an existing Rust deployment
+  hosts: rust_servers
+  become: true
+  roles:
+    - rust_telemetry

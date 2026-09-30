@@ -1,0 +1,9 @@
+---
+- name: Reload SSH configuration
+  ansible.builtin.service:
+    name: ssh
+    state: reloaded
+
+- name: Reload UFW rules
+  community.general.ufw:
+    state: reloaded

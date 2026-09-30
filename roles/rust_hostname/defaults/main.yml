@@ -1,0 +1,2 @@
+---
+rust_system_hostname: ""  # noqa: var-naming[no-role-prefix] -- Public setting distinct from the game display name.
