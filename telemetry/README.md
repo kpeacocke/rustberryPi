@@ -104,6 +104,39 @@ collector then performs no feature extraction and writes nothing. The directory
 lives under the collector's existing private telemetry directory on USB, so it is
 covered by the same ownership reclaim and the existing data backup.
 
+## Camera presence sensing
+
+Optional and off by default. When `rust_telemetry_screen_blank` is enabled, the Pi
+camera is used as a presence sensor so the three displays switch off after
+`rust_telemetry_screen_idle_minutes` (default 10) of an empty room, and switch
+back on as soon as somebody moves in front of them.
+
+Because waking on movement was a requirement, the camera necessarily runs
+continuously whenever the desktop session is up, including while the screens are
+blank. This is a wider posture than the rest of this project, so the handling is
+deliberately narrow. Frames are captured at roughly two per second into memory at
+the sensor's low-resolution stream, reduced to about 80×60 brightness samples,
+compared against the previous frame, and then discarded. Colour is never examined.
+No frame is written to disk, logged, cached, transmitted, or exposed through the
+dashboard API. Nothing derived from the camera enters the feature archive. The
+only value the detector produces is a boolean for "something changed", which is
+used immediately and not retained. There is no recording, no face or person
+detection, and no identification of any kind.
+
+The kill switch is `rust_telemetry_screen_blank: false`, which is also the default.
+Converging with it disabled removes the autostart entry, so nothing starts the
+camera on the next login. The camera is only ever opened by this feature. Enabling
+it installs `python3-picamera2` and `wlopm` and adds the desktop account to the
+`video` group, which takes effect at the next login. Sensitivity is tuned with
+`rust_telemetry_screen_pixel_threshold` and `rust_telemetry_screen_area_fraction`;
+see [display setup](../dashboard/README.md) for what those two control.
+
+Failures resolve towards the screens staying on. If the camera is missing, busy,
+or erroring, presence is reported as unknown and the displays are never blanked.
+If no supported display power command is available the feature disables itself and
+leaves the screens on. The process also restores power on exit, including when it
+is terminated, so a crash cannot leave the displays dark.
+
 ## Evidence and limits
 
 The Overview and Players & game screens list every approved player from the

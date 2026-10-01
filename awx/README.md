@@ -105,3 +105,74 @@ Do not schedule restores. Do not schedule FEX/All expecting automatic latest;
 their pins must be selected and maintained deliberately. Do not overlap different
 maintenance workflows or the Pi's backup timer. No recurring schedule is enabled
 by this repository; choose an operating window before creating one.
+
+## Adding new things to AWX
+
+AWX does not learn about repository changes on its own. A project sync updates
+the checked-out playbooks and installs the collections pinned in
+`collections/requirements.yml`. It does not create templates, attach or refresh
+surveys, set variables, or change the execution environment's ansible-core
+version. Everything below is a deliberate AWX-side step taken after the code has
+merged, and none of it is created automatically by this repository.
+
+| What changed in the repo | What to do in AWX |
+| --- | --- |
+| New playbook | Create a job template, add it to the table above, and add a workflow if it needs approval or notifications |
+| New role default | Nothing, unless this Pi should differ from the shipped default |
+| New shared fleet default | Mirror it into both `group_vars` files; sync the project |
+| New host-specific or private value | Set it as an AWX **host** variable |
+| New per-launch choice | Add it to the survey JSON, then re-import the survey |
+| New collection | Add the pin to `collections/requirements.yml` and `requirements.yml`, then sync |
+| New Python or ansible-core requirement | Rebuild or re-pin the execution environment |
+| New secret | Create or extend a credential; never a survey or inventory variable |
+
+### Where a new variable belongs
+
+Choose the narrowest home that works. A role default in `roles/*/defaults/main.yml`
+ships with the project and needs no AWX action at all; this is the right place for
+a new feature flag that is safe when off, which is why `rust_telemetry_enabled`
+and `rust_telemetry_screen_blank` both default to `false`. Turning such a flag on
+for this Pi is a host variable in AWX, not an edit to shared defaults.
+
+A genuinely fleet-wide, non-secret default belongs in
+`inventory/group_vars/rust_servers.yml` **and** the identical
+`playbooks/group_vars/rust_servers.yml`, because AWX's generated inventory loads
+the `playbooks` copy rather than the repository inventory. The test suite fails if
+the two drift apart. Anything host-specific, operational or sensitive — identity,
+storage UUID, NAS paths, addresses, approved player and admin IDs, FEX pins —
+belongs on the AWX host, where it stays out of this public repository.
+
+### Surveys
+
+`awx/survey.json` and `awx/maintenance-survey.json` are the reviewed source of
+truth, but AWX keeps its own copy inside each template. Editing the file and
+syncing the project changes nothing until the survey is re-imported into the
+template and re-enabled. Confirm the variable names afterwards: a survey answer
+is an extra variable and silently wins over inventory, so a typo fails open to
+the inventory value rather than erroring.
+
+Surveys are for decisions a person makes at launch, not for configuration that
+should persist. Never put a password, key or NAS credential in one. A question
+whose answer is always the same is better as a host variable, and a destructive
+one — restore confirmation in particular — should be asked at launch rather than
+saved into a schedule.
+
+### Execution environment and collections
+
+Project sync installs collections into the project, so a new pinned collection is
+picked up by the next sync. It does not upgrade ansible-core or Python. A change
+that requires a newer ansible-core needs the execution environment rebuilt or
+re-pinned to a new manifest, and on a Compose deployment with runner process
+isolation disabled it needs the shared worker upgraded instead, because the image
+selected in AWX is ignored there. The readiness check reports the version actually
+in use; trust it over the template's configuration.
+
+### Before the first real launch
+
+Creating a template does not prove it works. Sync the project, run **Readiness
+check** against the Pi, and confirm the controller version, SSH and become access,
+and that the new variables resolve as intended. Launch the new template once with
+`--check`-equivalent expectations in mind and read its output before scheduling
+it. Disable concurrent launches and job slicing, limit the job to the Pi, and set a
+timeout that covers the worst case rather than the typical run. Do not add a
+recurring schedule until the job has succeeded manually at least once.

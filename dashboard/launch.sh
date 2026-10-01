@@ -27,13 +27,15 @@ PY
 # Give the desktop compositor time to restore its saved display layout.
 sleep 5
 # Xwayland provides explicit window positions; native Wayland placement is compositor-controlled.
-"$browser" --ozone-platform=x11 --no-first-run --disable-session-crashed-bubble \
-  --user-data-dir="$state/game" --class=rustberry-game --window-position=0,0 \
-  --window-size=1920,1080 --app="http://127.0.0.1:$port/game" &
-"$browser" --ozone-platform=x11 --no-first-run --disable-session-crashed-bubble \
-  --user-data-dir="$state/touch" --class=rustberry-touch --window-position=1920,630 \
-  --window-size=1280,720 --app="http://127.0.0.1:$port/touch" &
-"$browser" --ozone-platform=x11 --no-first-run --disable-session-crashed-bubble \
-  --user-data-dir="$state/system" --class=rustberry-system --window-position=3200,0 \
-  --window-size=1920,1080 --app="http://127.0.0.1:$port/system" &
+# --password-store=basic keeps Chromium off the Secret Service. Desktop auto-login never unlocks
+# the login keyring through PAM, so a libsecret store would block startup on an unlock prompt.
+# These profiles hold no credential: the dashboard is read-only, local and has no sign-in.
+open_window() {
+  "$browser" --ozone-platform=x11 --no-first-run --disable-session-crashed-bubble \
+    --password-store=basic --user-data-dir="$state/$1" --class="rustberry-$1" \
+    --window-position="$2" --window-size="$3" --app="http://127.0.0.1:$port/$1" &
+}
+open_window game 0,0 1920,1080
+open_window touch 1920,630 1280,720
+open_window system 3200,0 1920,1080
 wait
