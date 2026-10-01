@@ -9,7 +9,22 @@
       - rust_worldsize | int <= 2000
       - rust_seed | int >= 0
       - rust_seed | int <= 2147483647
-      - rust_hostname is match('^[a-zA-Z0-9 ._-]+$')
+      - rust_hostname is match("^[a-zA-Z0-9 ._,|'-]+$")
+      - rust_description is not defined or rust_description is string
+      - rust_description is not defined or '\r' not in rust_description
+      - >-
+        rust_headerimage is not defined or
+        (rust_headerimage is string and
+        rust_headerimage is match('^https?://[^/?#\s]+/[^?#\s]+\.(?:jpg|png)$'))
+      - >-
+        rust_logoimage is not defined or
+        (rust_logoimage is string and
+        rust_logoimage is match('^https?://[^/?#\s]+/[^?#\s]+\.(?:jpg|png)$'))
+      - >-
+        rust_url is not defined or
+        (rust_url is string and
+        rust_url is match('^https?://[^/?#\s]+(?:[/?#][^\s]*)?$'))
+      - rust_saveinterval is not defined or (rust_saveinterval is integer and rust_saveinterval > 0)
       - rust_plus_port | int >= 10000
       - rust_plus_port | int <= 65535
       - rust_plus_port | int not in [28015, 28016, 28017]
@@ -105,6 +120,48 @@
 - name: Select effective player capacity
   ansible.builtin.set_fact:
     rust_server_effective_maxplayers: "{{ (rust_server_access.stdout | from_json).maxplayers }}"
+
+- name: Create persistent game configuration directory
+  ansible.builtin.file:
+    path: "/srv/rust/data/{{ rust_identity }}/cfg"
+    state: directory
+    owner: rust
+    group: rust
+    mode: '0750'
+  when: rust_description is defined or rust_headerimage is defined or rust_logoimage is defined or rust_url is defined or rust_saveinterval is defined
+
+- name: Plan server.cfg settings without writing while Rust runs
+  ansible.builtin.lineinfile:
+    path: "/srv/rust/data/{{ rust_identity }}/cfg/server.cfg"
+    create: true
+    owner: rust
+    group: rust
+    mode: '0600'
+    regexp: '^\s*server\.{{ item }}(?:\s|$)'
+    line: "server.{{ item }} {{ vars['rust_' ~ item] if item == 'saveinterval' else vars['rust_' ~ item] | to_json(ensure_ascii=False) }}"
+  check_mode: true
+  register: rust_server_cfg_plan
+  loop: [description, headerimage, logoimage, url, saveinterval]
+  when: vars['rust_' ~ item] is defined
+
+- name: Stop game gracefully only when server.cfg settings change
+  ansible.builtin.command:
+    argv: [python3, /usr/local/libexec/pi5-rust/service_state.py, stop]
+  register: rust_server_cfg_stop
+  changed_when: rust_server_cfg_stop.stdout == 'changed'
+  when: rust_server_cfg_plan.results | selectattr('changed') | list | length > 0  # noqa: no-handler -- Must stop before writing, not at deferred handler time.
+
+- name: Keep server.cfg settings on persistent storage
+  ansible.builtin.lineinfile:
+    path: "/srv/rust/data/{{ rust_identity }}/cfg/server.cfg"
+    create: true
+    owner: rust
+    group: rust
+    mode: '0600'
+    regexp: '^\s*server\.{{ item }}(?:\s|$)'
+    line: "server.{{ item }} {{ vars['rust_' ~ item] if item == 'saveinterval' else vars['rust_' ~ item] | to_json(ensure_ascii=False) }}"
+  loop: [description, headerimage, logoimage, url, saveinterval]
+  when: vars['rust_' ~ item] is defined
 
 - name: Write persistent deployment metadata
   ansible.builtin.copy:

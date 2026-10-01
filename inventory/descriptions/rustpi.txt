@@ -1,0 +1,48 @@
+Now with added RUST+!!
+
+You wake up naked on a beach with a rock. No kids. No mortgage. No emails. Within thirty minutes, you're collecting wood for some guy you don't even like. I cannot stress enough how optional this was.
+
+Welcome to A Slice of Rust. Five mates have been given a second chance at civilisation and immediately reinvented property disputes.
+
+CAST OF CHARACTERS
+
+Bell | Jez | Kit | Nick | Richie
+
+HOSTING
+
+This is hosted on a 16Gb Raspberry Pi 5 running Raspberry Pi OS - which is essentially Debian 13 (Trixie). Rust is not supposed to run on this. But I am amazing.
+I run Fex-em, lay down steam, then rust.
+There is a repo running all of this.
+
+It's run via Ansible - AWX. I built the AWX stack and host it at http://awx.ansible.com.
+
+A bunch of admin things like updates and backups happen at around 4 am AEST. Ansible does them, and a warning should go through the game. If there is something urgent, then I might run one of the workflows in the day - you'll get a server alert, and it'll come straight back (so long as a 5-minute startup is straight back).
+
+SETTINGS
+
+Vanilla Rust. All settings currently default, except...
+
++server.worldsize: 1500
++server.seed: 12345
++server.maxplayers: 5
++server.saveinterval: 300 (seconds)
++server.tickrate: 30
+server.itemdespawn: 180 (seconds)
+server.secure: true
+server.gamemode: Standard/Vanilla
+
+STANDARD/VANILLA
+
+Gathering Rates: 1x (Standard baseline for all nodes, trees, and components).
+Crafting Speeds: Standard (Vanilla queues and timers apply).
+Progression: Fully blueprints-based with default scrap costs.
+
+FEATURES AND RULES
+
+1. No scheduled admin wipes. Mandatory game wipes will still apply. I won't demolish your house because it's Tuesday; I'm going to leave that up to some nameless software company.
+
+2. Free-for-all PvP. Teaming Welcome. Go solo. Make friends. Pool your resources and find out that "our base" means you're grinding stone while Nick experiments with a balcony. Form a team. Build something beautiful with people you trust, then discover someone has used all the metal fragments, making a substantially worse door. Cooperation is encouraged. So is having your own cupboard.
+
+3. We have ambitions. Electricity. A helicopter. A base that doesn’t look like a bad episode of Grand Designs. Mostly, we stand around discussing what we should do while Bell is already doing something else.
+
+4. No bullying or targeted harassment. Bullying bullying is the new bullying. Try turning “be nice” into a competitive activity. Don't, for example, call a truce, then shoot someone in the head because you pulled a nice gun.

@@ -1,7 +1,11 @@
 ---
 # Keep identity, seed and UID stable across microSD rebuilds.
 rust_identity: ""  # Required in private host vars; keep your existing identity.
-rust_hostname: "Raspberry Pi Rust"
+rust_hostname: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../inventory/descriptions/rustpi-hostname.txt') }}"
+rust_description: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../inventory/descriptions/rustpi.txt') }}"
+rust_headerimage: "https://raw.githubusercontent.com/kpeacocke/rustberryPi/main/inventory/descriptions/rustbanner.png"
+rust_logoimage: "https://raw.githubusercontent.com/kpeacocke/rustberryPi/main/inventory/descriptions/logo.png"
+# Optional: set rust_url and rust_saveinterval in private host vars to manage server.cfg.
 rust_worldsize: 1500
 rust_seed: 12345
 rust_maxplayers: 5  # Public slots (1–5); restricted capacity is the approved roster size.

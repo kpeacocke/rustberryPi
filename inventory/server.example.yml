@@ -2,7 +2,12 @@
 # NEW servers only: copy into ignored host_vars/<alias>/settings.yml and edit.
 # Existing installations must preserve their current identity and numeric IDs.
 rust_identity: rustberry
-rust_hostname: Raspberry Pi Rust
+# The server name and description default to inventory/descriptions/rustpi-*.txt.
+# Override rust_hostname or rust_description here only for a host-specific value.
+# rust_headerimage: "https://example.org/rust-banner.png"  # Direct 512x256 JPG/PNG.
+# rust_logoimage: "https://example.org/rust-logo.png"  # Direct square JPG/PNG.
+# rust_url: "https://example.org/rust"
+# rust_saveinterval: 300  # Seconds between automatic world saves.
 rust_uid: 2001
 # rust_gid: 2001  # Optional; existing account/disk GID is adopted if omitted.
 rust_worldsize: 1500

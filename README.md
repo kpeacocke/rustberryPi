@@ -69,6 +69,48 @@ Edit ignored `inventory/hosts.local.yml`; set deployment overrides in ignored
 USB UUID with `lsblk -f` and set `rust_storage_uuid` for stronger identification.
 The tracked addresses and usernames are placeholders; supply your own values. Inventory settings apply to both existing and fresh hosts.
 
+The in-game server name and description are read from
+`inventory/descriptions/rustpi-hostname.txt` and
+`inventory/descriptions/rustpi.txt` on the Ansible controller. Edit those
+plain-text files to change the visible name or description, then rerun
+`playbooks/rust.yml`. The hostname file must contain a single line; a final
+newline is fine. Both paths resolve from the playbook directory, including
+in AWX when it uses this project checkout. Private host vars may override
+`rust_hostname` or `rust_description` with direct values if needed.
+
+The banner at `inventory/descriptions/rustbanner.png` and the logo at
+`inventory/descriptions/logo.png` are referenced through the public repository's
+direct raw image URLs as `rust_headerimage` and `rust_logoimage`. Commit and push
+both images to `main` before running Ansible: local image paths cannot be used by
+Rust clients. If you change either image, publish the updated file before
+reconverging. Host vars may override either URL for another host. Other optional
+settings can be set in host vars:
+
+```yaml
+rust_url: "https://example.org/rust"
+rust_saveinterval: 300
+```
+
+`rust_url` and `rust_saveinterval` are optional: if unset,
+Ansible leaves the corresponding setting alone. Ansible writes `server.description`
+from the text file, `server.headerimage` from the banner URL, and `server.logoimage`
+from the logo URL, plus
+`server.url` and `server.saveinterval` if set, to the persistent
+`/srv/rust/data/<identity>/cfg/server.cfg`, retaining other settings. The banner
+is the existing **1024x512 pixel** PNG served directly at an HTTP(S) URL
+ending in `.jpg` or `.png` (the URL is checked; image dimensions are not).
+The supplied logo is **256x256** as Facepunch recommends; icons are displayed
+in a circle, so check its appearance in-game and in Rust+.
+Use an HTTP(S) website or Discord invite URL for `rust_url`; `rust_saveinterval`
+is a positive integer in seconds (Rust's default is 300). YAML description
+newlines become Rust's `\n` separators; quotes are escaped. Any change stops
+the game gracefully before editing and starts it again on a normal convergence
+run. Unchanged values do not restart Rust. `rust_hostname` stays managed via the
+service startup arguments, not `server.cfg`; changing its source file updates
+the unit and restarts Rust. `rust_maxplayers`, `rust_worldsize` and `rust_seed`
+also remain startup arguments; the local RCON
+password remains generated and managed by the optional telemetry role.
+
 ## Converge the current Pi
 
 Read-only preflight:
