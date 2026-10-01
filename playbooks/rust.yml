@@ -13,7 +13,9 @@
       delegate_to: localhost
       become: false
       run_once: true
+      register: rust_firewall_module
       changed_when: false
+      failed_when: rust_firewall_module.rc != 0 or not (rust_firewall_module.stdout | trim)
       when: rust_manage_firewall | bool
   roles:
     - automation_account
