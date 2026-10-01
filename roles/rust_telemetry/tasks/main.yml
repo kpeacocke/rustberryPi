@@ -207,7 +207,11 @@
           'access_mode': (rust_telemetry_access.content | b64decode | from_json).mode,
           'public_capacity': rust_maxplayers | int,
           'player_names': rust_telemetry_player_names,
-          'player_history_file': '/srv/rust/data/.rustberrypi-telemetry/players.json'} | to_nice_json }}
+          'player_history_file': '/srv/rust/data/.rustberrypi-telemetry/players.json',
+          'feature_capture': rust_telemetry_feature_capture | bool,
+          'feature_dir': '/srv/rust/data/.rustberrypi-telemetry/features',
+          'feature_retain_days': rust_telemetry_feature_retain_days | int,
+          'feature_max_bytes': (rust_telemetry_feature_max_mib | int) * 1024 * 1024} | to_nice_json }}
     dest: /etc/rustberrypi/telemetry.json
     owner: root
     group: rust-telemetry

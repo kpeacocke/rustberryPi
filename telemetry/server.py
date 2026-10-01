@@ -24,8 +24,10 @@ def unit_status():
     return dict(line.split('=', 1) for line in text.splitlines() if '=' in line)
 
 
-def a2s_ready():
+def a2s_probe():
+    """Return (ready, latency_ms). Latency is None unless the query succeeded."""
     request = b'\xff\xff\xff\xffTSource Engine Query\x00'
+    started = time.monotonic()
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
             sock.settimeout(0.5)
@@ -35,9 +37,10 @@ def a2s_ready():
             if reply[:5] == b'\xff\xff\xff\xffA' and len(reply) == 9:
                 sock.send(request + reply[5:])
                 reply = sock.recv(65535)
-            return reply[:5] == b'\xff\xff\xff\xffI' and len(reply) > 10
+            ready = reply[:5] == b'\xff\xff\xff\xffI' and len(reply) > 10
     except OSError:
-        return False
+        return False, None
+    return ready, (time.monotonic() - started) * 1000 if ready else None
 
 
 def rcon_query(client, first_identifier=1):
@@ -76,6 +79,7 @@ class RconSession:
         self.next_attempt = 0
         self.identifier = 1
         self.error = None
+        self.latency_ms = None
 
     def poll(self, password_file):
         if time.monotonic() < self.next_attempt:
@@ -88,16 +92,21 @@ class RconSession:
                     http_no_proxy=['127.0.0.1'])
             identifier = self.identifier
             self.identifier += 2
+            # Timed around the query alone so connection setup never inflates the sample.
+            started = time.monotonic()
             result = rcon_query(self.client, identifier)
+            latency = (time.monotonic() - started) * 1000
             if not isinstance(result['serverinfo'], dict) or not isinstance(result['playerlist'], list):
                 raise ValueError('Unexpected RCON response shape')
             self.error = None
+            self.latency_ms = latency
             return result
         except Exception as error:
             category = type(error).__name__
             if category != self.error:
                 logging.warning('Local RCON unavailable (%s); retry in 60 seconds', category)
             self.error = category
+            self.latency_ms = None
             if self.client is not None:
                 try:
                     self.client.close()
@@ -170,6 +179,132 @@ def suggestions(data):
         items.append(('review', 'No restore success recorded', 'Test recovery on a spare system; do not overwrite the live world.'))
     return sorted([{'severity': a, 'title': b, 'detail': c} for a, b, c in items],
                   key=lambda item: item['severity'] != 'urgent')
+
+
+FEATURE_SCHEMA = 1
+ACTIVE_STATES = ('active', 'activating', 'deactivating', 'inactive', 'failed')
+
+
+def _number(value):
+    """Coerce to float, or None. Booleans are rejected; they are encoded separately."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return float(value) if value == value and value not in (float('inf'), float('-inf')) else None
+
+
+def _age(now, timestamp):
+    value = _number(timestamp)
+    return None if value is None or value <= 0 else max(0.0, now - value)
+
+
+def feature_row(data, latency):
+    """Flatten one sample into the frozen schema. Pure, so it is testable offline.
+
+    Every field is a number, a bool or None. Nothing here identifies a player:
+    only the connected count is recorded, never names, SteamIDs or addresses.
+    """
+    host = data.get('host') or {}
+    game = data.get('game') or {}
+    service = data.get('service') or {}
+    maintenance = data.get('maintenance') or {}
+    backup = maintenance.get('backup') or {}
+    watchdog = data.get('watchdog') or {}
+    now = _number(data.get('sampled_at')) or 0.0
+    try:
+        restarts = float(int(service.get('NRestarts')))
+    except (TypeError, ValueError):
+        restarts = None
+    cpu = [value for value in (_number(core) for core in host.get('cpu') or []) if value is not None]
+    throttled = _number(host.get('throttled'))
+    flags = None if throttled is None else int(throttled)
+    row = {'schema': FEATURE_SCHEMA, 'at': now,
+           'cpu_mean': sum(cpu) / len(cpu) if cpu else None,
+           'cpu_max': max(cpu) if cpu else None,
+           'memory_percent': _number(host.get('memory_percent')),
+           'swap_used_mib': _number(host.get('swap_used_mib')),
+           'temperature': _number(host.get('temperature')),
+           'throttled_now': None if flags is None else bool(flags & 1),
+           'throttled_since_boot': None if flags is None else bool(flags & 0x10000),
+           'capped_now': None if flags is None else bool(flags & 2),
+           'throttle_cpu_now': None if flags is None else bool(flags & 4),
+           'disk_percent': _number(host.get('disk_percent')),
+           'disk_free_gib': _number(host.get('disk_free_gib')),
+           'read_kib_s': _number(host.get('read_kib_s')), 'write_kib_s': _number(host.get('write_kib_s')),
+           'rx_kib_s': _number(host.get('rx_kib_s')), 'tx_kib_s': _number(host.get('tx_kib_s')),
+           'wifi_dbm': _number(host.get('wifi_dbm')),
+           'fps': _number(game.get('fps')), 'entities': _number(game.get('entities')),
+           'player_count': len(game.get('players') or []) if data.get('rcon_at') == now else None,
+           'game_uptime_seconds': _number(game.get('uptime_seconds')),
+           'a2s_ok': data.get('game_query_ready'),
+           'a2s_latency_ms': _number(latency.get('a2s')),
+           'rcon_ok': data.get('rcon_at') == now,
+           'rcon_latency_ms': _number(latency.get('rcon')),
+           'companion_listener': data.get('companion_listener'),
+           'active_state': service.get('ActiveState') if service.get('ActiveState') in ACTIVE_STATES else None,
+           'sub_state': str(service.get('SubState'))[:32] if service.get('SubState') else None,
+           'n_restarts': restarts,
+           'host_uptime_seconds': _number(host.get('uptime_seconds')),
+           'watchdog_blocked': watchdog.get('blocked') if isinstance(watchdog.get('blocked'), bool) else None,
+           'watchdog_status': str(watchdog.get('status'))[:32] if watchdog.get('status') else None,
+           'watchdog_failures': _number(watchdog.get('failures')),
+           'backup_age_s': _age(now, backup.get('backup_success')),
+           'recovery_ok': backup.get('recovery_ok') if isinstance(backup.get('recovery_ok'), bool) else None,
+           'suggestion_urgent': sum(1 for item in data.get('suggestions') or [] if item.get('severity') == 'urgent'),
+           'suggestion_total': len(data.get('suggestions') or [])}
+    return row
+
+
+class FeatureWriter:
+    """Append one JSON line per sample to a byte-bounded, daily-rotated archive.
+
+    The archive is the training corpus for later analysis. It is deliberately
+    append-only, local, and capped: the USB holds the Rust world and must never
+    be filled by telemetry. Failures are recorded, never raised, so a full or
+    read-only disk cannot stall the collector.
+    """
+    def __init__(self, directory, max_bytes=256 * 1024 * 1024, retain_days=90):
+        self.directory = Path(directory) if directory else None
+        self.max_bytes = max(1024 * 1024, int(max_bytes))
+        self.retain_days = max(1, int(retain_days))
+        self.error = None
+        self.written = 0
+
+    def files(self):
+        return sorted(self.directory.glob('features-*.jsonl'))
+
+    def prune(self):
+        """Drop oldest whole days until the archive fits the byte and day ceilings."""
+        files = self.files()
+        for path in files[:max(0, len(files) - self.retain_days)]:
+            path.unlink(missing_ok=True)
+        files = self.files()
+        sizes = {path: path.stat().st_size for path in files}
+        total = sum(sizes.values())
+        # Never delete the file currently being appended to, even if it alone exceeds the cap.
+        for path in files[:-1]:
+            if total <= self.max_bytes:
+                break
+            path.unlink(missing_ok=True)
+            total -= sizes[path]
+
+    def write(self, row):
+        if self.directory is None:
+            return
+        try:
+            self.directory.mkdir(parents=True, exist_ok=True)
+            self.directory.chmod(0o700)
+            path = self.directory / ('features-' + time.strftime('%Y-%m-%d', time.gmtime(row['at'])) + '.jsonl')
+            new = not path.exists()
+            with path.open('a', encoding='utf-8') as handle:
+                handle.write(json.dumps(row, separators=(',', ':')) + '\n')
+            if new:
+                path.chmod(0o600)
+            self.written += 1
+            if new or self.written % 720 == 0:  # Hourly at the 5 second cadence.
+                self.prune()
+            self.error = None
+        except (OSError, ValueError, TypeError) as error:
+            self.error = type(error).__name__
 
 
 class PlayerHistory:
@@ -255,6 +390,9 @@ class Collector:
         self.rcon_session = RconSession()
         self.player_history = PlayerHistory(config.get('allowed_players', []), config.get('player_names', {}),
                                             config.get('player_history_file'))
+        self.features = FeatureWriter(config.get('feature_dir') if config.get('feature_capture', True) else None,
+                                      config.get('feature_max_bytes', 256 * 1024 * 1024),
+                                      config.get('feature_retain_days', 90))
 
     def collect(self):
         now = time.time()
@@ -334,8 +472,9 @@ class Collector:
             companion = sock.connect_ex(('127.0.0.1', self.config['companion_port'])) == 0
         self.history.append({'at': now, 'cpu': sum(host['cpu']) / max(1, len(host['cpu'])),
                              'memory': memory.percent, 'temperature': host['temperature'], 'fps': self.game.get('fps') if self.last_rcon == now else None})
+        a2s_ok, a2s_latency = a2s_probe()
         data = {'sampled_at': now, 'rcon_at': self.last_rcon, 'rcon_error': self.rcon_error, 'game': self.game, 'host': host,
-                'game_query_ready': a2s_ready(),
+                'game_query_ready': a2s_ok,
                 'service': service, 'maintenance': maintenance, 'companion_listener': companion,
                 'events': list(self.events), 'history': list(self.history)}
         try:
@@ -346,6 +485,11 @@ class Collector:
         data['suggestions'] = suggestions(data)
         data['allowed_players'] = self.player_history.public(self.config['show_names'], self.last_rcon == now)
         data['player_history_error'] = self.player_history.error
+        # Only a fresh RCON reply carries a usable latency; a quiet interval is not a sample.
+        rcon_latency = self.rcon_session.latency_ms if self.last_rcon == now else None
+        data['latency'] = {'a2s_ms': a2s_latency, 'rcon_ms': rcon_latency}
+        self.features.write(feature_row(data, {'a2s': a2s_latency, 'rcon': rcon_latency}))
+        data['feature_error'] = self.features.error
         with self.lock:
             self.snapshot = data
 
