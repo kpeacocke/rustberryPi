@@ -8,7 +8,7 @@
       "required": true,
       "type": "multiplechoice",
       "variable": "rust_maintenance_target",
-      "choices": "rust\nos\nos-rust\nfex\nall",
+      "choices": ["rust", "os", "os-rust", "fex", "all"],
       "default": "rust",
       "min": 0,
       "max": 1024

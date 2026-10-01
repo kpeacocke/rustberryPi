@@ -8,7 +8,7 @@
       "required": true,
       "type": "multiplechoice",
       "variable": "rust_access_mode",
-      "choices": "restricted\npublic",
+      "choices": ["restricted", "public"],
       "default": "restricted",
       "min": 0,
       "max": 1024,

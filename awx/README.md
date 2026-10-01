@@ -150,6 +150,11 @@ syncing the project changes nothing until the survey is re-imported into the
 template and re-enabled. Confirm the variable names afterwards: a survey answer
 is an extra variable and silently wins over inventory, so a typo fails open to
 the inventory value rather than erroring.
+Keep multiple-choice `choices` as JSON arrays when importing surveys; this
+AWX launch UI shows an empty dropdown for legacy newline-delimited strings.
+If the Select maintenance workflow's launch wizard reports "No JobTemplate
+matches the given query", launch its single `RustberryPi - Select maintenance`
+job template instead. Do not launch both.
 
 Surveys are for decisions a person makes at launch, not for configuration that
 should persist. Never put a password, key or NAS credential in one. A question
