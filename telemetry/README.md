@@ -71,6 +71,39 @@ Check `sudo systemctl status rust-telemetry` and `sudo ss -lntp`: HTTP must be o
 that a joining/leaving player appears, unplug/reconnect telemetry to check the
 stale banner, and verify update comparisons before relying on them.
 
+## Feature archive
+
+Each sample also appends one JSON line to a local feature archive at
+`/srv/rust/data/.rustberrypi-telemetry/features/features-YYYY-MM-DD.jsonl`
+(UTC day boundaries, files `0600`, directory `0700`). This is an offline record
+for later trend and anomaly work; nothing reads it today and no behaviour depends
+on it. Rows are a flat, versioned schema (`schema: 1`) of numbers, booleans and
+short status strings: host load, thermals and throttle bits, disk and network
+rates, Rust FPS/entities, A2S and RCON reachability with their round-trip
+latencies, systemd state and restart count, watchdog state, backup age, and
+suggestion counts.
+
+The archive records counts only. No player name, Steam ID, address, chat, command
+or raw log text is ever written, so it carries no more information than the
+dashboard already shows. Values that are unknown are written as `null` rather than
+carrying a stale reading forward; a player count is omitted entirely unless the
+RCON poll succeeded in that same sample.
+
+Writing is best effort. A full disk, a permissions problem or a corrupt path is
+recorded as `feature_error` on the API and never interrupts sampling or the
+dashboard. Retention is bounded twice: files older than
+`rust_telemetry_feature_retain_days` (default 90) are deleted, and the oldest
+files are dropped once the directory exceeds `rust_telemetry_feature_max_mib`
+(default 256). The file currently being appended to is never deleted, so the
+ceiling can be briefly exceeded by one day's rows. At the five-second cadence the
+size ceiling is normally the binding limit. Pruning runs when a new day's file is
+created and roughly hourly otherwise, not on every sample.
+
+Set `rust_telemetry_feature_capture: false` to disable the archive entirely; the
+collector then performs no feature extraction and writes nothing. The directory
+lives under the collector's existing private telemetry directory on USB, so it is
+covered by the same ownership reclaim and the existing data backup.
+
 ## Evidence and limits
 
 The Overview and Players & game screens list every approved player from the
