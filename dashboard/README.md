@@ -44,6 +44,14 @@ Auto-login gives anyone with physical access that desktop session. Without it,
 the dashboards open when you log in. Keep the saved display layout matching the
 coordinates above. Actual placement still depends on your compositor.
 
+Auto-login never unlocks the login keyring, because PAM never sees your password.
+The launcher therefore starts Chromium with `--password-store=basic` so it never
+asks the Secret Service for a key and never stalls the dashboards behind an
+"unlock keychain" prompt. These three profiles store no credential: the dashboard
+is local, read-only and has no sign-in. Ansible deploys the launcher, so this is
+enforced on every converge. If a keyring prompt still appears after a reboot it is
+coming from some other application, not from these windows.
+
 Alternatively, manually create a **private local** file
 `~/.config/autostart/rustberrypi.desktop`:
 
@@ -59,3 +67,30 @@ This does not enable automatic desktop login. Change the launcher port with
 `RUST_DASHBOARD_PORT` if needed. Keep Raspberry Pi Connect available for recovery.
 Browser overhead on a Pi running FEX must be measured on the actual device;
 close unused desktop applications and compare server performance before/after.
+
+## Blanking the screens when the room is empty
+
+Set `rust_telemetry_screen_blank: true` to switch the displays off after
+`rust_telemetry_screen_idle_minutes` (default 10) with nobody in front of them,
+and back on the moment the Pi camera sees movement. It is off by default, and
+disabling it removes the autostart entry so the camera is never opened.
+
+Touch input does not need separate handling: reaching for the touchscreen is
+movement the camera already sees. That also means the camera is the only way to
+wake the screens, which is why every uncertain case resolves to leaving them on.
+A missing or failing camera, or a session with no supported display power command,
+disables blanking rather than risking a display that cannot be woken. Power is
+also restored when the process exits or is killed.
+
+Blanking uses `wlopm` to power the outputs down, falling back to `xset dpms` on
+X11 sessions. Outputs are never disabled, only powered down, because disabling an
+output makes the compositor reflow clients and would scatter the three positioned
+windows. Ansible installs `wlopm` and `python3-picamera2` and adds the desktop
+account to the `video` group when the feature is enabled.
+
+Tune sensitivity with `rust_telemetry_screen_pixel_threshold` (how much a sample
+must change to count, 0-255) and `rust_telemetry_screen_area_fraction` (how much
+of the frame must change). Raise either if the screens wake on their own; lower
+them if small movements are missed. See the camera section in
+[`telemetry/README.md`](../telemetry/README.md) for exactly what is and is not
+captured.

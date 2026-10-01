@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=RustberryPi presence
+Exec=env RUST_SCREEN_IDLE_SECONDS={{ (rust_telemetry_screen_idle_minutes | int) * 60 }} RUST_SCREEN_PIXEL_THRESHOLD={{ rust_telemetry_screen_pixel_threshold | int }} RUST_SCREEN_AREA_FRACTION={{ rust_telemetry_screen_area_fraction | float }} python3 /opt/rustberrypi/dashboard/presence.py
+Terminal=false
+X-GNOME-Autostart-enabled=true

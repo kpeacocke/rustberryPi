@@ -84,7 +84,7 @@
 
 - name: Configure optional desktop startup
   ansible.builtin.include_tasks: desktop.yml
-  when: rust_telemetry_desktop_user | length > 0 or rust_telemetry_desktop_autostart | bool
+  when: rust_telemetry_desktop_user | length > 0 or rust_telemetry_desktop_autostart | bool or rust_telemetry_screen_blank | bool
 
 - name: Generate a local RCON credential once
   ansible.builtin.command:

@@ -12,3 +12,8 @@ rust_telemetry_fex_version: "{{ fex_version | default('FEX-2609-120-ge2f973fe9')
 rust_telemetry_feature_capture: true
 rust_telemetry_feature_retain_days: 90
 rust_telemetry_feature_max_mib: 256 # Hard ceiling; the Rust world shares this 32 GB volume.
+# Camera-gated display blanking. Opt-in: the camera only runs when this is enabled.
+rust_telemetry_screen_blank: false
+rust_telemetry_screen_idle_minutes: 10
+rust_telemetry_screen_pixel_threshold: 12 # Per-pixel luma change counted as movement, 0-255.
+rust_telemetry_screen_area_fraction: 0.004 # Share of the frame that must change to wake the screens.

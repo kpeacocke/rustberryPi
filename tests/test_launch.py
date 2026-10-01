@@ -32,3 +32,28 @@ class LaunchTests(unittest.TestCase):
     def test_identity_cannot_escape_state_directory(self):
         with self.assertRaises(ValueError):
             launch.startup_args(['FEX', '+server.identity', '../elsewhere'])
+
+
+class DashboardLauncherTests(unittest.TestCase):
+    """The kiosk launcher must never block desktop startup on a keyring unlock prompt."""
+
+    def setUp(self):
+        script = Path(__file__).resolve().parents[1] / 'dashboard/launch.sh'
+        # Join shell line continuations so each browser invocation is one logical command.
+        self.commands = script.read_text().replace('\\\n', ' ').splitlines()
+
+    def test_every_browser_invocation_avoids_the_secret_service(self):
+        invocations = [line for line in self.commands if '"$browser"' in line]
+        self.assertTrue(invocations, 'launcher no longer invokes the browser')
+        for invocation in invocations:
+            # Desktop auto-login leaves the login keyring locked; libsecret would prompt.
+            self.assertIn('--password-store=basic', invocation)
+
+    def test_all_three_displays_are_still_launched(self):
+        joined = ' '.join(self.commands)
+        for view in ('game', 'touch', 'system'):
+            self.assertIn(view, joined)
+
+
+if __name__ == '__main__':
+    unittest.main()

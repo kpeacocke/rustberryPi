@@ -46,3 +46,31 @@
     path: "{{ ansible_facts.getent_passwd[rust_telemetry_desktop_user][4] }}/.config/autostart/rustberrypi.desktop"
     state: absent
   when: not rust_telemetry_desktop_autostart | bool
+
+- name: Install camera and display power tooling
+  ansible.builtin.apt:
+    name: [python3-picamera2, wlopm]
+    state: present
+  when: rust_telemetry_screen_blank | bool
+
+- name: Grant the desktop account camera access
+  ansible.builtin.user:
+    name: "{{ rust_telemetry_desktop_user }}"
+    groups: video
+    append: true
+  when: rust_telemetry_screen_blank | bool
+
+- name: Install presence startup entry
+  ansible.builtin.template:
+    src: rustberrypi-presence.desktop.j2
+    dest: "{{ ansible_facts.getent_passwd[rust_telemetry_desktop_user][4] }}/.config/autostart/rustberrypi-presence.desktop"
+    owner: "{{ rust_telemetry_desktop_user }}"
+    group: "{{ ansible_facts.getent_passwd[rust_telemetry_desktop_user][2] }}"
+    mode: '0644'
+  when: rust_telemetry_screen_blank | bool
+
+- name: Remove presence startup entry when disabled
+  ansible.builtin.file:
+    path: "{{ ansible_facts.getent_passwd[rust_telemetry_desktop_user][4] }}/.config/autostart/rustberrypi-presence.desktop"
+    state: absent
+  when: not rust_telemetry_screen_blank | bool
