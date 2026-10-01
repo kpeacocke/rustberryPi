@@ -169,7 +169,9 @@ workflow with a single selectable-maintenance job node and prompt that node for
 variables. Put the same survey on the workflow and pass its variables through.
 Use success/failure edges only for reporting, not an unconditional restart or
 restore. Never run OS, FEX and Rust nodes in parallel on the same Pi. No AWX objects
-are created automatically by this repository.
+are created automatically by this repository. See
+[adding new things to AWX](../awx/README.md) for the AWX-side steps a new
+playbook, variable or survey question needs.
 
 ## Failure and interrupted-job recovery
 

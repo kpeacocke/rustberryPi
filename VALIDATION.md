@@ -154,3 +154,27 @@ These checks do not validate live Raspberry Pi sensor permissions, installed-gam
 RCON response schemas, graphical compositor placement, display overhead or a full
 Ansible deployment on the Pi. The dashboard HTTP health check alone does not prove
 game readiness. Live acceptance is documented in telemetry/README.md.
+
+## Telemetry feature archive and kiosk session hardening
+
+140 helper tests passed, covering the existing telemetry, dashboard, backup and
+watchdog helpers plus the new feature archive and camera presence detector. The
+archive tests cover sampling, rotation against the configured age and size caps,
+refusal to retain anything beyond the recorded numeric features, and recovery from
+a truncated file. The presence tests cover the idle timer, wake on movement, the
+warmup window reporting motion while the sensor settles, unknown presence keeping
+the screens on, probing display power with the wake command rather than the blank
+command, self-disabling when no supported power command exists, and restoring
+power on exit and on termination. The launcher tests confirm all three Chromium
+windows are opened with the same options, including the basic password store.
+
+`ansible-lint` reported no failures and no warnings across 119 files on the
+production profile, and the shell launcher passed `sh -n` and `shellcheck`.
+
+These checks do not validate any of this on the Pi. Camera availability and
+permissions, `python3-picamera2` and `wlopm` package availability on the installed
+OS, the compositor's response to display power commands, real-room motion
+sensitivity, the absence of a keyring prompt after an actual reboot, feature
+archive growth against the retention caps, and converge idempotence are all
+unverified until a hardware run. Motion thresholds are a starting estimate and are
+expected to need tuning in the room.

@@ -519,6 +519,11 @@ Do not put private keys, passwords, NAS credentials, public IPs or personal
 inventory into the public project. Keep operational inventory in AWX or a separate
 private repository, and use Vault or AWX credentials for secrets.
 
+Adding a playbook, variable, survey question or collection to this repository does
+not change AWX by itself; a project sync updates code but creates nothing. See
+[adding new things to AWX](awx/README.md) for which AWX-side step each kind of
+change needs and where a new variable belongs.
+
 ## Migrating from the original personal inventory
 
 Before pulling this update, preserve your tracked inventory and group variables
@@ -650,6 +655,22 @@ already configured server. Initial setup configures authenticated local RCON and
 restarts Rust once; subsequent unchanged deployment does not restart the game.
 No new public ports are opened. Update probes inspect available versions and
 refresh package indexes; they never install game or OS updates.
+
+Telemetry also keeps a small local feature archive of the numeric health and
+latency samples it already collects, so later trend and anomaly work has history
+to draw on. Nothing reads it today. It is capped by both age and size, stays on
+the Pi, and records counts only: no names, IDs, addresses or log text.
+`rust_telemetry_feature_capture: false` disables it. See
+[feature archive](telemetry/README.md) for the schema and retention settings.
+
+Chromium runs with its own password store, so an auto-login desktop never blocks
+on a keyring unlock dialog before the dashboards open. Optional
+`rust_telemetry_screen_blank` switches the displays off after
+`rust_telemetry_screen_idle_minutes` (default 10) of an empty room and wakes them
+when the Pi camera sees movement. It is off by default, the camera is opened only
+while it is enabled, and every failure leaves the screens on rather than dark.
+See [camera presence sensing](telemetry/README.md) for exactly what the camera
+does and does not capture.
 
 ## Linux hostname and inventory name
 

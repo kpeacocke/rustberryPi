@@ -125,7 +125,11 @@ detection, and no identification of any kind.
 
 The kill switch is `rust_telemetry_screen_blank: false`, which is also the default.
 Converging with it disabled removes the autostart entry, so nothing starts the
-camera on the next login. The camera is only ever opened by this feature.
+camera on the next login. The camera is only ever opened by this feature. Enabling
+it installs `python3-picamera2` and `wlopm` and adds the desktop account to the
+`video` group, which takes effect at the next login. Sensitivity is tuned with
+`rust_telemetry_screen_pixel_threshold` and `rust_telemetry_screen_area_fraction`;
+see [display setup](../dashboard/README.md) for what those two control.
 
 Failures resolve towards the screens staying on. If the camera is missing, busy,
 or erroring, presence is reported as unknown and the displays are never blanked.
