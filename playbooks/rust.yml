@@ -7,6 +7,14 @@
       ansible.builtin.assert:
         that: not ansible_check_mode
         fail_msg: Use syntax-check and the documented read-only preflight; full check mode cannot simulate mounts or FEX.
+    - name: Require firewall collection on the execution worker before touching Rust
+      ansible.builtin.command:
+        argv: [ansible-doc, -t, module, community.general.ufw]
+      delegate_to: localhost
+      become: false
+      run_once: true
+      changed_when: false
+      when: rust_manage_firewall | bool
   roles:
     - automation_account
     - prerequisites

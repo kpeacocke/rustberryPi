@@ -166,6 +166,11 @@ re-pinned to a new manifest, and on a Compose deployment with runner process
 isolation disabled it needs the shared worker upgraded instead, because the image
 selected in AWX is ignored there. The readiness check reports the version actually
 in use; trust it over the template's configuration.
+The Rust convergence play checks that the worker can load `community.general.ufw`
+before it changes or stops the game when firewall management is enabled. If this
+fails after a successful project sync, repair collection visibility in the
+execution worker (verify `ansible-doc -t module community.general.ufw` there);
+changing the project's pinned requirements alone will not fix the job's runtime.
 
 ### Before the first real launch
 
