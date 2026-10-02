@@ -17,11 +17,12 @@ class ServerConfigTests(unittest.TestCase):
             (ROOT / 'roles/rust_server/tasks/main.yml').read_text(),
         )
         selected = [task for task in tasks if task['name'] in (
+            'Resolve optional server.cfg values before serializing them',
             'Plan server.cfg settings without writing while Rust runs',
             'Stop game gracefully only when server.cfg settings change',
             'Keep server.cfg settings on persistent storage',
         )]
-        self.assertEqual(len(selected), 3)
+        self.assertEqual(len(selected), 4)
 
         with tempfile.TemporaryDirectory() as directory:
             config = Path(directory) / 'server.cfg'
@@ -37,12 +38,12 @@ class ServerConfigTests(unittest.TestCase):
                     module['path'] = str(config)
                     module.pop('owner')
                     module.pop('group')
-            selected[1].pop('ansible.builtin.command')
-            selected[1].pop('changed_when')
-            selected[1]['ansible.builtin.debug'] = {
+            selected[2].pop('ansible.builtin.command')
+            selected[2].pop('changed_when')
+            selected[2]['ansible.builtin.debug'] = {
                 'msg': 'Graceful stop requested',
             }
-            selected[2]['register'] = 'rust_server_cfg_write'
+            selected[3]['register'] = 'rust_server_cfg_write'
             selected.append({
                 'name': 'Report planned and applied changes',
                 'ansible.builtin.debug': {

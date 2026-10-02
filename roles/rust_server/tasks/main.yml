@@ -130,6 +130,17 @@
     mode: '0750'
   when: rust_description is defined or rust_headerimage is defined or rust_logoimage is defined or rust_url is defined or rust_saveinterval is defined
 
+- name: Resolve optional server.cfg values before serializing them
+  ansible.builtin.set_fact:
+    rust_server_cfg_settings: >-
+      {{ [
+        {'name': 'description', 'value': rust_description} if rust_description is defined else none,
+        {'name': 'headerimage', 'value': rust_headerimage} if rust_headerimage is defined else none,
+        {'name': 'logoimage', 'value': rust_logoimage} if rust_logoimage is defined else none,
+        {'name': 'url', 'value': rust_url} if rust_url is defined else none,
+        {'name': 'saveinterval', 'value': rust_saveinterval} if rust_saveinterval is defined else none
+      ] | reject('none') | list }}
+
 - name: Plan server.cfg settings without writing while Rust runs
   ansible.builtin.lineinfile:
     path: "/srv/rust/data/{{ rust_identity }}/cfg/server.cfg"
@@ -137,12 +148,11 @@
     owner: rust
     group: rust
     mode: '0600'
-    regexp: '^\s*server\.{{ item }}(?:\s|$)'
-    line: "server.{{ item }} {{ vars['rust_' ~ item] if item == 'saveinterval' else vars['rust_' ~ item] | to_json(ensure_ascii=False) }}"
+    regexp: '^\s*server\.{{ item.name }}(?:\s|$)'
+    line: "server.{{ item.name }} {{ item.value if item.name == 'saveinterval' else item.value | to_json(ensure_ascii=False) }}"
   check_mode: true
   register: rust_server_cfg_plan
-  loop: [description, headerimage, logoimage, url, saveinterval]
-  when: vars['rust_' ~ item] is defined
+  loop: "{{ rust_server_cfg_settings }}"
 
 - name: Stop game gracefully only when server.cfg settings change
   ansible.builtin.command:
@@ -158,10 +168,9 @@
     owner: rust
     group: rust
     mode: '0600'
-    regexp: '^\s*server\.{{ item }}(?:\s|$)'
-    line: "server.{{ item }} {{ vars['rust_' ~ item] if item == 'saveinterval' else vars['rust_' ~ item] | to_json(ensure_ascii=False) }}"
-  loop: [description, headerimage, logoimage, url, saveinterval]
-  when: vars['rust_' ~ item] is defined
+    regexp: '^\s*server\.{{ item.name }}(?:\s|$)'
+    line: "server.{{ item.name }} {{ item.value if item.name == 'saveinterval' else item.value | to_json(ensure_ascii=False) }}"
+  loop: "{{ rust_server_cfg_settings }}"
 
 - name: Write persistent deployment metadata
   ansible.builtin.copy:

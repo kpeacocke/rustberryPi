@@ -5,6 +5,8 @@ import struct
 import tempfile
 import unittest
 
+import yaml
+
 
 class AwxDefaultsTests(unittest.TestCase):
     def test_local_and_awx_defaults_match(self):
@@ -39,8 +41,22 @@ class AwxDefaultsTests(unittest.TestCase):
             'inventory/descriptions/logo.png'
         )
 
-        playbook = [
-            {'hosts': 'rust_servers', 'gather_facts': False, 'tasks': [
+        tasks = yaml.safe_load(
+            (root / 'roles/rust_server/tasks/main.yml').read_text()
+        )
+        selected = [task for task in tasks if task['name'] in (
+            'Resolve optional server.cfg values before serializing them',
+            'Keep server.cfg settings on persistent storage',
+        )]
+        self.assertEqual(len(selected), 2)
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / 'server.cfg'
+            module = selected[1]['ansible.builtin.lineinfile']
+            module['path'] = str(config)
+            module.pop('owner')
+            module.pop('group')
+            playbook = [
+                {'hosts': 'rust_servers', 'gather_facts': False, 'tasks': [
                 {'ansible.builtin.assert': {'that': [
                     'rust_hostname == ' + json.dumps(hostname.strip()),
                     "'CAST OF CHARACTERS\\n' in rust_description",
@@ -48,18 +64,25 @@ class AwxDefaultsTests(unittest.TestCase):
                     'rust_headerimage == ' + json.dumps(banner_url),
                     'rust_logoimage == ' + json.dumps(logo_url),
                 ]}},
-            ]},
-        ]
-        with tempfile.NamedTemporaryFile(
-            mode='w', suffix='.yml', dir=root / 'playbooks',
-        ) as temporary:
-            # JSON is valid YAML, and avoids adding another test dependency.
-            temporary.write(json.dumps(playbook))
-            temporary.flush()
-            result = subprocess.run(
-                ['ansible-playbook', '-i', str(root / 'inventory/hosts.yml'),
-                 '--connection', 'local', '--limit', 'rustberrypi',
-                 temporary.name],
-                capture_output=True, text=True, cwd=root,
-            )
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                *selected,
+                ]},
+            ]
+            with tempfile.NamedTemporaryFile(
+                mode='w', suffix='.yml', dir=root / 'playbooks',
+            ) as temporary:
+                # JSON is valid YAML, and avoids extra syntax in the fixture.
+                temporary.write(json.dumps(playbook))
+                temporary.flush()
+                result = subprocess.run(
+                    ['ansible-playbook', '-i', str(root / 'inventory/hosts.yml'),
+                     '--connection', 'local', '--limit', 'rustberrypi',
+                     temporary.name],
+                    capture_output=True, text=True, cwd=root,
+                )
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            contents = config.read_text()
+            self.assertIn('Now with added RUST+!!', contents)
+            self.assertIn('CAST OF CHARACTERS\\n', contents)
+            self.assertNotIn("lookup('ansible.builtin.file'", contents)
+            self.assertIn('server.headerimage "' + banner_url + '"', contents)
+            self.assertIn('server.logoimage "' + logo_url + '"', contents)

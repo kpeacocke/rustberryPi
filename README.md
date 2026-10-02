@@ -92,8 +92,9 @@ rust_saveinterval: 300
 ```
 
 `rust_url` and `rust_saveinterval` are optional: if unset,
-Ansible leaves the corresponding setting alone. Ansible writes `server.description`
-from the text file, `server.headerimage` from the banner URL, and `server.logoimage`
+Ansible leaves the corresponding setting alone. Ansible resolves the controller
+text file before writing `server.description`, `server.headerimage` from the banner
+URL, and `server.logoimage`
 from the logo URL, plus
 `server.url` and `server.saveinterval` if set, to the persistent
 `/srv/rust/data/<identity>/cfg/server.cfg`, retaining other settings. The banner
