@@ -17,16 +17,23 @@ PLAYER = '76561198000000001'
 
 
 class FakeRcon:
-    def __init__(self, response):
+    def __init__(self, response, unsolicited=False):
         self.response = response
         self.command = None
+        self.unsolicited = unsolicited
 
     def send(self, message):
         self.command = json.loads(message)
 
     def recv(self):
+        if self.unsolicited:
+            self.unsolicited = False
+            return json.dumps({'Identifier': -1, 'Message': 'Unrelated event'})
         return json.dumps({'Identifier': self.command['Identifier'],
                            'Message': self.response.format(player=PLAYER)})
+
+    def settimeout(self, timeout):
+        pass
 
     def close(self):
         pass
@@ -50,7 +57,8 @@ class AccessRuntimeTests(unittest.TestCase):
                 self.assertIn('restored 1', output.getvalue())
                 with self.assertRaisesRegex(RuntimeError, 'Restored 1 missing queue grants'):
                     runtime.apply_access(verify_only=True)
-                connect.return_value = FakeRcon('User {player} will already skip the queue')
+                connect.return_value = FakeRcon('User {player} will already skip the queue',
+                                                unsolicited=True)
                 runtime.apply_access(verify_only=True)
                 self.assertIn('restored 0', output.getvalue())
 
