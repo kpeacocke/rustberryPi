@@ -21,7 +21,9 @@ class AccessTests(unittest.TestCase):
         self.assertEqual(len(desired['players']), 5)
         self.assertEqual(desired['admins'], [A])
         rendered = access.reconcile('', desired)
-        self.assertEqual(rendered.count('skipqueueid '), 5)
+        config = access.reconcile_config('server.description "Hi"\n', desired)
+        self.assertEqual(config.count('global.skipqueueid '), 5)
+        self.assertEqual(access.reconcile_config(config, desired), config)
         self.assertEqual(rendered.count('ownerid '), 1)
         self.assertEqual(access.reconcile(rendered, desired), rendered)
         with self.assertRaises(ValueError):
@@ -83,11 +85,25 @@ class AccessTests(unittest.TestCase):
             access.reconcile(f'ownerid {B} "owner" ""\n', {'mode': 'restricted', 'players': [A]})
 
     def test_server_reformat_does_not_restart(self):
-        original = f'skipqueueid {B} "renamed" ""\nskipqueueid {A} "renamed" ""\n'
-        self.assertEqual(access.reconcile(original, {'mode': 'restricted', 'players': [A, B]}), original)
+        original = f'ownerid {A} "renamed" ""\n'
+        self.assertEqual(access.reconcile(original, {'mode': 'restricted', 'players': [A, B],
+                                                      'admins': [A]}), original)
 
     def test_public_revokes_queue_entries(self):
         self.assertEqual(access.reconcile(f'skipqueueid {A} "friend" ""\n', {'mode': 'public', 'players': []}), '')
+        config = access.reconcile_config('', {'mode': 'restricted', 'players': [A]})
+        self.assertEqual(access.reconcile_config(config, {'mode': 'public', 'players': []}), '')
+
+    def test_config_preserves_other_settings_and_rejects_broken_markers(self):
+        original = 'server.hostname "Preserve me"\n'
+        configured = access.reconcile_config(original, {'mode': 'restricted', 'players': [A, B]})
+        self.assertTrue(configured.startswith(original))
+        self.assertEqual(configured.count('global.skipqueueid '), 2)
+        self.assertEqual(access.reconcile_config(configured, {'mode': 'restricted',
+                                                             'players': [A, B]}), configured)
+        with self.assertRaises(ValueError):
+            access.reconcile_config(original + '// BEGIN rustberryPi approved players\n',
+                                    {'mode': 'restricted', 'players': [A]})
 
     def test_apply_is_idempotent_and_stops_before_writing(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -113,7 +129,8 @@ class AccessTests(unittest.TestCase):
                         access.main()
                     self.assertEqual(json.loads(output.getvalue())['changed'], expected)
                 self.assertEqual(sum(command[1] == 'stop' for command in calls), 1)
-                self.assertIn(A, (root / 'world/cfg/users.cfg').read_text())
+                self.assertIn(A, (root / 'world/cfg/server.cfg').read_text())
+                self.assertFalse((root / 'world/cfg/users.cfg').exists())
                 for slots in (5, 4):
                     output = io.StringIO()
                     with patch('sys.stdin', io.StringIO(json.dumps({'mode': 'public', 'maxplayers': slots}))), \

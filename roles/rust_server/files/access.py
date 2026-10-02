@@ -81,16 +81,38 @@ def reconcile(text, desired):
                 raise ValueError('An existing administrator is outside the approved list; review users.cfg explicitly')
         kept.append(line)
     admins_match = 'admins' not in desired or (sorted(owners) == desired['admins'] and not moderators)
-    if sorted(current) == desired['players'] and admins_match:
+    if not current and admins_match:
         return text
     output = ''.join(kept)
     if output and not output.endswith('\n'):
         output += '\n'
     output += ''.join(f'ownerid {value} "admin" "managed admin"\n' for value in desired.get('admins', []))
-    return output + ''.join(f'skipqueueid {value} "friend" "managed access"\n' for value in desired['players'])
+    return output
 
 
-def atomic_write(path, text, uid, gid):
+def reconcile_config(text, desired):
+    begin = '// BEGIN rustberryPi approved players'
+    end = '// END rustberryPi approved players'
+    if text.count(begin) != text.count(end) or text.count(begin) > 1:
+        raise ValueError('Incomplete or duplicate approved player configuration')
+    if begin in text:
+        before, remainder = text.split(begin, 1)
+        _, after = remainder.split(end, 1)
+        if not after.startswith('\n'):
+            raise ValueError('Malformed approved player configuration')
+        text = before + after[1:]
+    if desired['mode'] != 'restricted':
+        return text
+    block = begin + '\n'
+    block += ''.join(f'global.skipqueueid {value} "friend" "managed access"\n'
+                     for value in desired['players'])
+    block += end + '\n'
+    if text and not text.endswith('\n'):
+        text += '\n'
+    return text + block
+
+
+def atomic_write(path, text, uid, gid, mode=0o640):
     descriptor, temporary = tempfile.mkstemp(dir=path.parent)
     try:
         with os.fdopen(descriptor, 'w') as stream:
@@ -98,7 +120,7 @@ def atomic_write(path, text, uid, gid):
             stream.flush()
             os.fsync(stream.fileno())
         os.chown(temporary, uid, gid)
-        os.chmod(temporary, 0o640)
+        os.chmod(temporary, mode)
         os.replace(temporary, path)
     finally:
         if os.path.exists(temporary):
@@ -117,20 +139,23 @@ def main():
     cfg = root / identity / 'cfg'
     state = root / 'access.json'
     users = cfg / 'users.cfg'
+    config = cfg / 'server.cfg'
     with open('/run/lock/pi5-rust.lock', 'w') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
-        for path in (root, root / identity, cfg, users, state, cfg / 'server.cfg'):
+        for path in (root, root / identity, cfg, users, state, config):
             if path.is_symlink():
                 raise ValueError('Access configuration must not contain symlinks')
         previous = json.loads(state.read_text()) if state.exists() else None
         desired = policy(request, previous)
-        if desired['mode'] == 'restricted' and (cfg / 'server.cfg').exists():
-            for line in (cfg / 'server.cfg').read_text().splitlines():
+        original_config = config.read_text() if config.exists() else ''
+        if desired['mode'] == 'restricted':
+            for line in original_config.splitlines():
                 if re.match(r'^\s*(?:server\.)?maxplayers\b', line):
                     raise ValueError('Remove the maxplayers override in server.cfg before restricting access')
         original = users.read_text() if users.exists() else ''
         updated = reconcile(original, desired)
-        changed = desired != previous or updated != original
+        updated_config = reconcile_config(original_config, desired)
+        changed = desired != previous or updated != original or updated_config != original_config
         if changed:
             # Wait for graceful shutdown before re-reading: Rust may save users.cfg.
             active = subprocess.run(['systemctl', 'is-active', '--quiet', 'rust.service']).returncode == 0
@@ -138,6 +163,8 @@ def main():
                 subprocess.run(['systemctl', 'stop', 'rust.service'], check=True)
             original = users.read_text() if users.exists() else ''
             updated = reconcile(original, desired)
+            original_config = config.read_text() if config.exists() else ''
+            updated_config = reconcile_config(original_config, desired)
             account = pwd.getpwnam('rust')
             cfg.mkdir(parents=True, exist_ok=True)
             for directory in (root / identity, cfg):
@@ -152,6 +179,8 @@ def main():
                     os.chmod(backup, 0o600)
             if updated != original:
                 atomic_write(users, updated, account.pw_uid, account.pw_gid)
+            if updated_config != original_config:
+                atomic_write(config, updated_config, account.pw_uid, account.pw_gid, 0o600)
             atomic_write(state, json.dumps(desired, sort_keys=True) + '\n', 0, 0)
         print(json.dumps({'changed': changed, 'maxplayers': 0 if desired['mode'] == 'restricted' else public_capacity}))
 

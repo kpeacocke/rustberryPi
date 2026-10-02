@@ -642,12 +642,14 @@ survey IDs are operational data, not secret credentials, and may appear in AWX.
 ### Behaviour and limits
 
 This uses Facepunch's documented vanilla method: `server.maxplayers=0` plus
-`skipqueueid` entries in the persistent identity's `cfg/users.cfg`. The approved
+`global.skipqueueid` commands in the persistent identity's `cfg/server.cfg`. Rust
+rewrites `users.cfg` while starting, dropping manually maintained skip-queue entries;
+the server configuration is replayed at every startup instead. The approved
 list is limited to five, replacing the ordinary public-slot limit. Join permission alone grants no admin rights. When administrator management is
 left at `preserve`, existing owners/moderators outside the approved list cause a
 failure for explicit review because admins bypass the queue. Bans are preserved.
 Unknown users.cfg commands and conflicting server.cfg capacity settings also fail
-for review. The approved list replaces all skipqueue entries, so removing an ID
+for review. The approved list replaces managed skipqueue entries, so removing an ID
 revokes its queue access. A pre-management users.cfg copy is retained privately.
 
 Changes stop Rust gracefully under the maintenance lock before editing its files,
