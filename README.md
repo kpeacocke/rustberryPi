@@ -91,8 +91,9 @@ rust_url: "https://example.org/rust"
 rust_saveinterval: 300
 ```
 
-`rust_url` and `rust_saveinterval` are optional: if unset,
-Ansible leaves the corresponding setting alone. Ansible resolves the controller
+The default `rust_url` points to the community Discord invite; override it in
+private host vars to use another site. `rust_saveinterval` is optional: if unset,
+Ansible leaves that setting alone. Ansible resolves the controller
 text file before writing `server.description`, `server.headerimage` from the banner
 URL, and `server.logoimage`
 from the logo URL, plus

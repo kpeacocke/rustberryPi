@@ -23,7 +23,7 @@ class AwxDefaultsTests(unittest.TestCase):
         description = (root / 'inventory/descriptions/rustpi.txt').read_text()
         self.assertTrue(hostname.strip())
         self.assertNotIn('\n', hostname.strip())
-        self.assertIn('CAST OF CHARACTERS\n', description)
+        self.assertIn('FEATURES AND RULES\n', description)
         banner = root / 'inventory/descriptions/rustbanner.png'
         with banner.open('rb') as image:
             self.assertEqual(image.read(16)[:8], b'\x89PNG\r\n\x1a\n')
@@ -59,10 +59,11 @@ class AwxDefaultsTests(unittest.TestCase):
                 {'hosts': 'rust_servers', 'gather_facts': False, 'tasks': [
                 {'ansible.builtin.assert': {'that': [
                     'rust_hostname == ' + json.dumps(hostname.strip()),
-                    "'CAST OF CHARACTERS\\n' in rust_description",
+                    "'FEATURES AND RULES\\n' in rust_description",
                     """rust_hostname is match("^[a-zA-Z0-9 ._,|'-]+$")""",
                     'rust_headerimage == ' + json.dumps(banner_url),
                     'rust_logoimage == ' + json.dumps(logo_url),
+                    'rust_url == "https://discord.gg/UV6D43jQY"',
                 ]}},
                 *selected,
                 ]},
@@ -82,7 +83,8 @@ class AwxDefaultsTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             contents = config.read_text()
             self.assertIn('Now with added RUST+!!', contents)
-            self.assertIn('CAST OF CHARACTERS\\n', contents)
+            self.assertIn('FEATURES AND RULES\\n', contents)
             self.assertNotIn("lookup('ansible.builtin.file'", contents)
             self.assertIn('server.headerimage "' + banner_url + '"', contents)
             self.assertIn('server.logoimage "' + logo_url + '"', contents)
+            self.assertIn('server.url "https://discord.gg/UV6D43jQY"', contents)
