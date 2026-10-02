@@ -643,8 +643,13 @@ survey IDs are operational data, not secret credentials, and may appear in AWX.
 
 This uses Facepunch's documented vanilla method: `server.maxplayers=0` plus
 `global.skipqueueid` commands in the persistent identity's `cfg/server.cfg`. Rust
-rewrites `users.cfg` while starting, dropping manually maintained skip-queue entries;
-the server configuration is replayed at every startup instead. The approved
+rewrites `users.cfg` while starting, dropping manually maintained skip-queue entries,
+and does not reliably apply the `server.cfg` commands to its live queue. With
+telemetry enabled, `rust-access.service` waits for game query and authenticated
+local RCON after each Rust start, then applies and verifies the saved approved list
+from `/srv/rust/data/access.json`. The Converge validation also fails if any
+permission is missing after that service completes. Restricted access requires
+`rust_telemetry_enabled: true` for this reason. The approved
 list is limited to five, replacing the ordinary public-slot limit. Join permission alone grants no admin rights. When administrator management is
 left at `preserve`, existing owners/moderators outside the approved list cause a
 failure for explicit review because admins bypass the queue. Bans are preserved.

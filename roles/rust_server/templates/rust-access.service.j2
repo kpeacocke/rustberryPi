@@ -1,0 +1,12 @@
+[Unit]
+Description=Restore approved Rust player queue access
+Requires=rust.service
+After=rust.service
+BindsTo=rust.service
+RequiresMountsFor=/srv/rust
+ConditionPathExists=/etc/rustberrypi/rcon-password
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/local/libexec/pi5-rust/access_runtime.py
+TimeoutStartSec=960

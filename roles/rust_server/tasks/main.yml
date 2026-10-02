@@ -80,7 +80,7 @@
     src: "{{ item }}"
     dest: "/usr/local/libexec/pi5-rust/{{ item }}"
     mode: '0755'
-  loop: [steam_manage.py, health.py, service_state.py, access.py]
+  loop: [steam_manage.py, health.py, service_state.py, access.py, access_runtime.py]
 
 - name: Install managed startup helper
   ansible.builtin.copy:
@@ -120,6 +120,11 @@
 - name: Select effective player capacity
   ansible.builtin.set_fact:
     rust_server_effective_maxplayers: "{{ (rust_server_access.stdout | from_json).maxplayers }}"
+
+- name: Require local RCON for reliable restricted access
+  ansible.builtin.assert:
+    that: rust_server_effective_maxplayers | int != 0 or rust_telemetry_enabled | default(false) | bool
+    fail_msg: Restricted player access requires rust_telemetry_enabled so queue grants can be restored after startup.
 
 - name: Create persistent game configuration directory
   ansible.builtin.file:
@@ -191,6 +196,14 @@
   notify:
     - Reload Rust units
     - Restart Rust
+
+- name: Configure approved player restore service
+  ansible.builtin.template:
+    src: rust-access.service.j2
+    dest: /etc/systemd/system/rust-access.service
+    mode: '0644'
+  notify: Reload Rust units
+  when: rust_server_effective_maxplayers | int == 0
 
 - name: Configure optional firewall
   ansible.builtin.include_role:

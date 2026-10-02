@@ -1,6 +1,9 @@
 [Unit]
 Description=Raspberry Pi 5 Rust PoC
 Wants=network-online.target
+{% if rust_server_effective_maxplayers | int == 0 and rust_telemetry_enabled | default(false) | bool %}
+Wants=rust-access.service
+{% endif %}
 After=network-online.target
 RequiresMountsFor=/srv/rust
 BindsTo=srv-rust.mount

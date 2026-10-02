@@ -5,6 +5,22 @@
   changed_when: false
   when: rust_start | bool
 
+- name: Apply approved player queue access after Rust is ready
+  ansible.builtin.systemd_service:
+    name: rust-access.service
+    state: started
+  when:
+    - rust_start | bool
+    - rust_server_effective_maxplayers | int == 0
+
+- name: Verify all approved players bypass the queue
+  ansible.builtin.command:
+    argv: [python3, /usr/local/libexec/pi5-rust/access_runtime.py, --verify-only]
+  changed_when: false
+  when:
+    - rust_start | bool
+    - rust_server_effective_maxplayers | int == 0
+
 - name: Verify companion listener when enabled
   ansible.builtin.wait_for:
     host: 127.0.0.1
