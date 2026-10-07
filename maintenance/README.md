@@ -48,6 +48,33 @@ the Rust helper avoids downloading an unchanged game build. No map wipe, access
 policy change or firewall change is part of these jobs. Updates can still change
 game compatibility; backup data does not make downgrading a game build safe.
 
+## Update, feature and blueprint policy
+
+Target the latest stable public Rust build, with vanilla gameplay defaults.
+Preserve blueprint progress wherever the upstream version supports it. There are
+no scheduled discretionary map or blueprint wipes.
+
+- Routine updates preserve the existing world, player databases, server identity
+  and configuration. Use the Rust-only maintenance workflow for its verified
+  pre-update backup and post-update readiness checks.
+- New features use the installed build's defaults unless a gameplay exception is
+  deliberately approved. Do not accumulate speculative or obsolete convar
+  overrides from older releases.
+- Features that depend on new map generation may require a new world. An optional
+  map-only wipe to obtain them requires explicit operator approval and a verified
+  backup; existing bases and terrain will be lost. The 1500-size map may still
+  omit some monuments.
+- Treat map wipes and blueprint wipes separately. Preserve blueprint databases
+  during a map-only wipe; never delete the entire server-identity directory as
+  a shortcut, since it also contains player data and configuration.
+- Mandatory upstream map wipes still apply. Blueprint progress is retained where
+  compatible, but an upstream blueprint reset or database incompatibility may
+  prevent preservation. A backup cannot guarantee compatibility with a new build.
+
+This is an operator policy, not a new automation feature. These playbooks do not
+provide a map-only wipe workflow or guarantee preservation across incompatible
+upstream releases. Do not wipe maps or blueprints to troubleshoot connectivity.
+
 Only in-game notifications are implemented here. Offline players will not see
 them. Completion/failure is reported through the Ansible/AWX job; attach external
 AWX notification templates if desired. No email, Discord or other credentials are

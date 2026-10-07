@@ -246,6 +246,12 @@ between the check and download; the installed build ID is the authoritative resu
 Rust forced wipes and protocol changes are upstream behavior; backups do not make
 old saves compatible with every new release.
 
+The operating policy is latest stable public Rust features with vanilla defaults,
+no scheduled discretionary wipes, and blueprint progress preserved wherever
+compatible. New map content may require an explicitly approved map-only wipe;
+that is separate from a blueprint reset and is not implemented by routine
+maintenance. See the [update, feature and blueprint policy](maintenance/README.md#update-feature-and-blueprint-policy).
+
 The systemd unit restarts on failure with rate limits. Configuration changes trigger
 restart; ordinary convergence does not. Unity uses `-logFile -` to write directly to the console captured by
 journald, avoiding attempts to reopen `/dev/stdout` as a regular file. An explicit

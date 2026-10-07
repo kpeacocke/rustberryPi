@@ -39,7 +39,7 @@ Progression: Fully blueprints-based with default scrap costs.
 
 FEATURES AND RULES
 
-1. No scheduled admin wipes. Mandatory game wipes will still apply. I won't demolish your house because it's Tuesday; I'm going to leave that up to some nameless software company.
+1. No scheduled admin wipes. We aim to run the latest stable Rust features with vanilla defaults and keep your blueprint progress wherever the game allows it. Mandatory game wipes still apply. A map-only wipe for new map features will be announced and deliberately approved; it loses bases, not intentionally your blueprints. Upstream blueprint resets or incompatible data may still force a reset. I won't demolish your house just because it's Tuesday.
 
 2. Free-for-all PvP. Teaming Welcome. Go solo. Make friends. Pool your resources and find out that "our base" means you're grinding stone while Nick experiments with a balcony. Form a team. Build something beautiful with people you trust, then discover someone has used all the metal fragments, making a substantially worse door. Cooperation is encouraged. So is having your own cupboard.
 
