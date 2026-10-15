@@ -1,5 +1,48 @@
 # Validation record
 
+## Server early warning and Hailo preparation — 2026-10-15
+
+Software checks ran locally on macOS, **not on the Pi**. The CPU advisory monitor,
+maintenance comparison, numeric worker endpoint, optional Hailo worker, model
+export/compiler tooling, dashboard and deployment configuration are implemented.
+HAT delivery remains a **release candidate**: no real feature corpus was available
+here, no chip-specific HEF was compiled and no physical accelerator was exercised.
+
+| Exact command / check | Result |
+| --- | --- |
+| `/opt/homebrew/Cellar/ansible/14.5.0/libexec/bin/python -m unittest discover -s tests -v` | 168 discovered: 166 passed, 2 optional numpy/ONNX cases skipped in that controller environment |
+| `.venv/bin/python -m unittest discover -s tests -p 'test_*health*.py' -v` | 19 passed, including both optional cases above; real ONNX execution compared with CPU reference |
+| `.venv/bin/python -m compileall -q telemetry tools tests` | Passed |
+| `ansible-lint` | Passed production profile, 0 failures; duplicate installed collection notice remains environmental |
+| `ansible-playbook -i inventory/hosts.yml playbooks/telemetry.yml --syntax-check` | Passed |
+| `ansible-playbook -i inventory/hosts.yml playbooks/maintenance.yml --syntax-check` | Passed |
+| `node --check dashboard/app.js` | Passed |
+| `git diff --check` | Passed |
+| Actual local HTTP handler tests | GET status/numeric sample 200; hostile Host 403; POST 501; traversal 404 |
+| Integrated-browser synthetic fixture | Learning/normal/unavailable/review, HAT error, stale analysis, unmatched comparison and literal-text evidence rendering verified |
+| Kiosk layout checks | Five-player Overview fits 1280x720; System fits 1920x1080 with bounded scrolling detail panels |
+| Hailo compiler/runtime interface tests | Mocked SDK/device contract only: **not hardware evidence** |
+| Real Hailo Dataflow Compiler | Unavailable (`hailo_sdk_client` not installed); not run |
+| Snyk code scan | Tool unavailable in this session; not run |
+
+Optional workstation validation used the versions pinned in
+`requirements-health-model.txt`. CI now has a separate real ONNX export job so
+the optional tests do not silently remain skipped in normal controller jobs.
+That workflow has not been run remotely by this authoring session.
+
+Tests also cover workload matching, warmup/startup exclusions, sustained versus
+single-sample deviations, gaps, missing sensors, private bounded persistence,
+corrupt-state preservation, invalid maintenance evidence, successive before/after
+comparisons, HEF manifest validation, CPU/HAT parity rejection, stale results and
+nonzero `--once` failure without CPU substitution.
+
+Before hardware release, follow [HAT commissioning and rollback](telemetry/README.md#server-early-warning-and-hailo):
+identify the actual 8/8L chip, verify its driver/runtime/device permissions without
+changing the required 4 KB kernel, train on real representative samples, compile
+successfully on the supported x86 Linux SDK host, prove actual on-device
+inference/reference parity, and measure the stated Rust-performance limits.
+No deployment, maintenance window, kernel change or game restart was performed.
+
 Repository built on 2026-09-23. Checks ran in Ubuntu under WSL, not on the Pi.
 
 | Check | Result |

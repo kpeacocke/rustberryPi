@@ -14,6 +14,11 @@ import time
 import psutil
 import websocket
 
+if __package__:
+    from .health import HealthMonitor, hat_status, read_document
+else:
+    from health import HealthMonitor, hat_status, read_document
+
 
 def run(argv):
     return subprocess.check_output(argv, text=True, timeout=5, stderr=subprocess.DEVNULL).strip()
@@ -380,6 +385,7 @@ class Collector:
         self.config = config
         self.lock = threading.Lock()
         self.snapshot = {'sampled_at': 0, 'status': 'Waiting for first sample'}
+        self.health_sample = {'schema': FEATURE_SCHEMA, 'at': 0}
         self.history = deque(maxlen=120)
         self.events = deque(maxlen=12)
         self.previous_ids = None
@@ -393,6 +399,7 @@ class Collector:
         self.features = FeatureWriter(config.get('feature_dir') if config.get('feature_capture', True) else None,
                                       config.get('feature_max_bytes', 256 * 1024 * 1024),
                                       config.get('feature_retain_days', 90))
+        self.health = HealthMonitor(config.get('health_state_file'))
 
     def collect(self):
         now = time.time()
@@ -488,10 +495,26 @@ class Collector:
         # Only a fresh RCON reply carries a usable latency; a quiet interval is not a sample.
         rcon_latency = self.rcon_session.latency_ms if self.last_rcon == now else None
         data['latency'] = {'a2s_ms': a2s_latency, 'rcon_ms': rcon_latency}
-        self.features.write(feature_row(data, {'a2s': a2s_latency, 'rcon': rcon_latency}))
+        row = feature_row(data, {'a2s': a2s_latency, 'rcon': rcon_latency})
+        event = None
+        event_error = None
+        event_path = Path(self.config.get('health_maintenance_file',
+                                        '/var/lib/rustberrypi/server-health-maintenance.json'))
+        try:
+            if event_path.exists():
+                event = read_document(event_path)
+        except (OSError, ValueError, TypeError) as error:
+            event_error = type(error).__name__
+        data['server_health'] = self.health.update(
+            row, maintenance=Path('/var/lib/rustberrypi-maintenance').exists(), event=event)
+        if event_error:
+            data['server_health']['maintenance_error'] = event_error
+        data['server_health']['hat'] = hat_status(self.config.get('health_hat_result_file'), now)
+        self.features.write(row)
         data['feature_error'] = self.features.error
         with self.lock:
             self.snapshot = data
+            self.health_sample = row
 
     def loop(self):
         while True:
@@ -510,9 +533,9 @@ def handler(collector, assets, port):
                 self.send_error(403)
                 return
             route = self.path.split('?', 1)[0]
-            if route == '/api/status':
+            if route in ('/api/status', '/api/health-sample'):
                 with collector.lock:
-                    body = json.dumps(collector.snapshot).encode()
+                    body = json.dumps(collector.snapshot if route == '/api/status' else collector.health_sample).encode()
                 mime = 'application/json'
             elif route in ('/', '/game', '/system', '/touch', '/style.css', '/app.js'):
                 file = {'/style.css': 'style.css', '/app.js': 'app.js'}.get(route, 'index.html')

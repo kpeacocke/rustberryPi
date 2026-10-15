@@ -1,0 +1,3 @@
+# Optional workstation-only model tooling. Not installed on the game server.
+numpy==2.5.4
+onnx==1.23.2

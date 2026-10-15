@@ -131,8 +131,18 @@ merged, and none of it is created automatically by this repository.
 Choose the narrowest home that works. A role default in `roles/*/defaults/main.yml`
 ships with the project and needs no AWX action at all; this is the right place for
 a new feature flag that is safe when off, which is why `rust_telemetry_enabled`
-and `rust_telemetry_screen_blank` both default to `false`. Turning such a flag on
+and `rust_telemetry_screen_blank` default to `false`. Turning such a flag on
 for this Pi is a host variable in AWX, not an edit to shared defaults.
+
+Server CPU analysis is included when telemetry is deployed. Optional HAT analysis
+uses host variables `rust_telemetry_hat_enabled: true` and
+`rust_telemetry_hat_model_dir`: the latter must be an absolute path accessible
+**inside the execution environment**, not a path on your laptop. Supply the
+private compiled HEF/manifest through a reviewed read-only artifact mount or
+private deployment source; do not commit them to the public project. Driver,
+runtime, device permissions, model compilation and real hardware acceptance are
+prerequisites. See [HAT commissioning](../telemetry/README.md#server-early-warning-and-hailo).
+No new survey, credential or game-control permission is required.
 
 A genuinely fleet-wide, non-secret default belongs in
 `inventory/group_vars/rust_servers.yml` **and** the identical

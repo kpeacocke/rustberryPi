@@ -10,6 +10,8 @@ import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 
+import yaml
+
 ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location('maintenance_control', ROOT / 'maintenance/control.py')
 control = importlib.util.module_from_spec(SPEC)
@@ -18,6 +20,29 @@ with patch.dict(sys.modules, {'websocket': MagicMock()}):
 
 
 class MaintenanceTests(unittest.TestCase):
+    def test_successful_maintenance_restarts_telemetry_before_fresh_rcon_check(self):
+        tasks = yaml.safe_load((ROOT / 'roles/rust_maintenance/tasks/main.yml').read_text())
+        workflow = next(task for task in tasks if task['name'] == 'Execute selected jobs inside one maintenance window')
+        block = workflow['block']
+        restart_index = next(
+            index for index, task in enumerate(block)
+            if task['name'] == 'Restart collector after maintenance'
+        )
+        self.assertEqual(
+            block[restart_index]['ansible.builtin.systemd_service'],
+            {'name': 'rust-telemetry.service', 'state': 'restarted'},
+        )
+        fresh_check_index = next(
+            index for index, task in enumerate(block)
+            if task['name'] == 'Wait for fresh RCON data'
+        )
+        self.assertLess(restart_index, fresh_check_index)
+        record_index = next(
+            index for index, task in enumerate(block)
+            if task['name'] == 'Record verified maintenance for performance comparison'
+        )
+        self.assertLess(fresh_check_index, record_index)
+
     def test_fex_activation_preserves_service_world_and_previous_unit(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

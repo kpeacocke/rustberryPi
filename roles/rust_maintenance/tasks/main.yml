@@ -188,10 +188,10 @@
       changed_when: false
       no_log: true  # Existing health helper includes raw game logs on failure.
 
-    - name: Resume collector for authenticated readiness check
+    - name: Restart collector after maintenance
       ansible.builtin.systemd_service:
         name: rust-telemetry.service
-        state: started
+        state: restarted
 
     - name: Wait for fresh RCON data
       ansible.builtin.uri:
@@ -218,6 +218,21 @@
         argv: [systemctl, reset-failed, rust.service]
       when: rust_maintenance_verified_restarts.stdout | trim | int > 0
       changed_when: true
+
+    - name: Read Pi time for verified maintenance evidence
+      ansible.builtin.command: date +%s
+      register: rust_maintenance_completed_at
+      changed_when: false
+
+    - name: Record verified maintenance for performance comparison
+      ansible.builtin.copy:
+        content: >-
+          {{ {'version': 1, 'completed_at': rust_maintenance_completed_at.stdout | trim | int,
+              'target': rust_maintenance_target} | to_nice_json }}
+        dest: /var/lib/rustberrypi/server-health-maintenance.json
+        owner: root
+        group: root
+        mode: '0644'
 
     - name: Report verified completion
       ansible.builtin.debug:

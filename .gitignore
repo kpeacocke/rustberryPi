@@ -1,4 +1,5 @@
 .venv/
+.venv-health/
 .ansible/
 __pycache__/
 *.pyc
@@ -22,3 +23,10 @@ id_rsa*
 
 # Local per-owner settings and player lists.
 *.private.yml
+
+# Host-specific trained models, compiler output and calibration samples.
+health-model/
+*.hef
+*.har
+*.onnx
+*.npy

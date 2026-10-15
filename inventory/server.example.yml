@@ -23,3 +23,6 @@ rust_plus_enabled: false
 # Optional local-only dashboards; first enablement restarts Rust for local RCON.
 rust_telemetry_enabled: false
 rust_telemetry_show_names: true
+# CPU advisory analysis is included with telemetry. HAT inference is opt-in.
+rust_telemetry_hat_enabled: false
+# rust_telemetry_hat_model_dir: /absolute/controller/path/health-model

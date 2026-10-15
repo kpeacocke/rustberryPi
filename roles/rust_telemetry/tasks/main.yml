@@ -71,8 +71,8 @@
     owner: root
     group: root
     mode: '0644'
-  loop: [server.py, maintenance.py]
-  notify: Restart telemetry
+  loop: [server.py, maintenance.py, health.py, hat.py]
+  notify: [Restart telemetry, Restart HAT analysis]
 
 - name: Install dashboard assets
   ansible.builtin.copy:
@@ -211,13 +211,19 @@
           'feature_capture': rust_telemetry_feature_capture | bool,
           'feature_dir': '/srv/rust/data/.rustberrypi-telemetry/features',
           'feature_retain_days': rust_telemetry_feature_retain_days | int,
+          'health_state_file': '/srv/rust/data/.rustberrypi-telemetry/health.json',
+          'health_maintenance_file': '/var/lib/rustberrypi/server-health-maintenance.json',
+          'health_hat_result_file': '/srv/rust/data/.rustberrypi-telemetry/hat.json' if rust_telemetry_hat_enabled | bool else none,
           'feature_max_bytes': (rust_telemetry_feature_max_mib | int) * 1024 * 1024} | to_nice_json }}
     dest: /etc/rustberrypi/telemetry.json
     owner: root
     group: rust-telemetry
     mode: '0640'
-  notify: Restart telemetry
+  notify: [Restart telemetry, Restart HAT analysis]
   no_log: true
+
+- name: Configure optional Hailo server analysis
+  ansible.builtin.include_tasks: hat.yml
 
 - name: Install telemetry service units
   ansible.builtin.template:
@@ -268,3 +274,18 @@
   delay: 5
   until: rust_telemetry_ready.rc == 0
   when: rust_start | bool
+
+- name: Verify actual HAT inference rather than just a running worker
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ rust_telemetry_port }}/api/status"
+    return_content: true
+  register: rust_telemetry_hat_ready
+  until: >-
+    rust_telemetry_hat_ready.status | default(0) == 200 and
+    rust_telemetry_hat_ready.json.server_health.hat.status | default('unavailable') in ['ready', 'review']
+  retries: 90
+  delay: 5
+  no_log: true
+  when:
+    - rust_telemetry_hat_enabled | bool
+    - rust_start | bool

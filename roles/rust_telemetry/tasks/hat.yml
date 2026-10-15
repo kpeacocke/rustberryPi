@@ -1,0 +1,60 @@
+---
+- name: Require explicitly supplied compiled HAT model
+  ansible.builtin.assert:
+    that:
+      - rust_telemetry_hat_model_dir | length > 0
+      - rust_telemetry_hat_model_dir is match('^/')
+    fail_msg: Build and compile a model first; set rust_telemetry_hat_model_dir to its controller directory.
+  when: rust_telemetry_hat_enabled | bool
+
+- name: Verify preinstalled Hailo runtime and device access as collector
+  ansible.builtin.command:
+    argv:
+      - runuser
+      - -u
+      - rust-telemetry
+      - --
+      - /usr/bin/python3
+      - -c
+      - >-
+        import os,numpy,hailo_platform;
+        assert os.access('/dev/hailo0', os.R_OK | os.W_OK),
+        'Grant rust-telemetry access to /dev/hailo0 using the vendor udev policy'
+  changed_when: false
+  when: rust_telemetry_hat_enabled | bool
+
+- name: Create protected HAT model directory
+  ansible.builtin.file:
+    path: /opt/rustberrypi/models
+    state: directory
+    owner: root
+    group: rust-telemetry
+    mode: '0750'
+  when: rust_telemetry_hat_enabled | bool
+
+- name: Install compiled HAT model and manifest
+  ansible.builtin.copy:
+    src: '{{ rust_telemetry_hat_model_dir }}/{{ item }}'
+    dest: '/opt/rustberrypi/models/{{ item }}'
+    owner: root
+    group: rust-telemetry
+    mode: '0640'
+  loop: [server-health.hef, manifest.json]
+  notify: Restart HAT analysis
+  when: rust_telemetry_hat_enabled | bool
+
+- name: Install isolated HAT analysis unit
+  ansible.builtin.template:
+    src: rust-health-hat.service.j2
+    dest: /etc/systemd/system/rust-health-hat.service
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart HAT analysis
+
+- name: Apply HAT analysis enablement
+  ansible.builtin.systemd_service:
+    name: rust-health-hat.service
+    enabled: '{{ rust_telemetry_hat_enabled | bool }}'
+    state: "{{ 'started' if rust_telemetry_hat_enabled | bool else 'stopped' }}"
+    daemon_reload: true

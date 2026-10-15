@@ -75,9 +75,10 @@ stale banner, and verify update comparisons before relying on them.
 
 Each sample also appends one JSON line to a local feature archive at
 `/srv/rust/data/.rustberrypi-telemetry/features/features-YYYY-MM-DD.jsonl`
-(UTC day boundaries, files `0600`, directory `0700`). This is an offline record
-for later trend and anomaly work; nothing reads it today and no behaviour depends
-on it. Rows are a flat, versioned schema (`schema: 1`) of numbers, booleans and
+(UTC day boundaries, files `0600`, directory `0700`). The optional workstation
+training tool reads these archives; the live CPU monitor consumes the same
+sanitized samples directly and does not scan the archive. Rows are a flat,
+versioned schema (`schema: 1`) of numbers, booleans and
 short status strings: host load, thermals and throttle bits, disk and network
 rates, Rust FPS/entities, A2S and RCON reachability with their round-trip
 latencies, systemd state and restart count, watchdog state, backup age, and
@@ -103,6 +104,229 @@ Set `rust_telemetry_feature_capture: false` to disable the archive entirely; the
 collector then performs no feature extraction and writes nothing. The directory
 lives under the collector's existing private telemetry directory on USB, so it is
 covered by the same ownership reclaim and the existing data backup.
+
+## Server early warning and Hailo
+
+### CPU baseline: included with telemetry
+
+The Overview and System dashboards report `server_health` from the existing
+loopback-only `GET /api/status` endpoint. The HAT worker reads only the numeric
+schema-1 `GET /api/health-sample`, never the player-bearing status document.
+No new port or control endpoint exists.
+The analysis remains available when feature archival is disabled.
+
+- Require a fresh RCON reply, successful A2S query, active game and at least five
+  minutes of game uptime. Maintenance, startup and unavailable data do not train.
+- Match the exact connected player count and a 5,000-entity band. A new workload
+  says **learning**, rather than claiming it is healthy or unhealthy.
+- Collect 120 eligible samples per workload (about ten minutes at the usual
+  cadence). Learn median and median absolute deviation for FPS, CPU, memory,
+  swap, temperature, disk reads/writes, A2S latency and RCON latency.
+  A metric needs at least 80% coverage; unassessed metrics are listed.
+- Use minimum scales of 5 FPS, 10 CPU percentage points, 5 memory percentage
+  points, 64 MiB swap, 3 degrees Celsius, 128 KiB/s disk reads/writes, 5 ms A2S
+  and 20 ms RCON. Flag adverse deviations of at least three scales; FPS is
+  adverse downwards, the other metrics upwards. These are operational heuristics,
+  **not probabilities, diagnoses or forecasts**.
+- A single deviation says **watching**. The same metric must deviate for six
+  consecutive eligible samples (roughly 30 seconds) before **review**. Gaps over
+  20 seconds, workload changes and unavailable samples reset persistence.
+- Baselines freeze after learning to avoid quietly treating a deterioration as
+  normal. They depend on the initial samples being representative. Existing
+  hard-limit suggestions and the watchdog continue independently.
+
+State is atomically written at most once per minute, plus completed learning and
+new maintenance events, to the private USB telemetry directory as `health.json`.
+There are at most 24 workloads in each of four bounded sets: frozen baselines,
+rolling pre-maintenance history, the latest comparison's reference and its
+post-maintenance samples. Each workload holds at most 120 numeric metric rows.
+Corrupt/oversized state is preserved and visibly reported rather than overwritten.
+To intentionally relearn, stop telemetry, move `health.json` to a dated private
+backup outside its original path, then restart telemetry. Do not delete the
+whole telemetry directory; it also holds player history and archives.
+
+### Maintenance comparison
+
+Only maintenance that passes both game-query and authenticated RCON readiness
+writes `/var/lib/rustberrypi/server-health-maintenance.json`, using the Pi's clock.
+The collector restarts during recovery and waits until the maintenance marker is
+released before resuming analysis. Its saved rolling history supplies the
+pre-maintenance reference. After 120 eligible post-maintenance samples in a
+matching workload, the dashboard shows before/after medians and absolute changes.
+The comparison remains fixed for that event, not a moving claim of causation.
+
+`not-recorded`, `collecting`, `unmatched`, `comparable` and `review` distinguish
+the evidence states. A changed player count or entity band can be unmatched;
+no regression or improvement is inferred in that case. The rolling reference is
+the most recently observed samples in that workload, not necessarily the
+immediately preceding ten minutes of wall time. Failed/interrupted maintenance
+does not create successful completion evidence. Only the latest verified event
+is compared; this is not a historical maintenance-results database.
+
+### Optional Hailo predictor: release candidate, hardware acceptance pending
+
+`rust_telemetry_hat_enabled` defaults to `false`. This feature does not use a
+camera, identify players or train on the Pi. A small learned regression model
+estimates the expected current metrics from player count and entity count.
+It is exported as a 1x1 convolution plus ReLU, operating on a repeated 32x32
+workload tensor. Spatial repetition is only a compiler tensor-layout contract;
+there are no images or invented time-series inputs.
+
+This is an experiment in workload-conditioned residual scoring, not a chatbot
+or a failure predictor. A two-input model cannot explain every cause of server
+load, and may not beat the simpler statistical baseline. Review its chronological
+holdout errors against the median baseline before adopting it.
+
+**No device-specific HEF is bundled.** Real training data and successful Hailo
+Dataflow Compiler execution are prerequisites, not optional acceptance checks.
+The compiler is proprietary workstation tooling; it is not installed by Ansible
+and cannot run on this macOS controller or the ARM game server. A small network
+can still hit compiler allocation/quantization limitations. ONNX export and a
+mocked SDK contract test do not prove compilation or accelerator compatibility.
+
+#### 1. Identify the hardware and compatible runtime on the Pi
+
+```bash
+hailortcli fw-control identify
+ls -l /dev/hailo0
+/usr/bin/python3 -c 'import numpy, hailo_platform'
+```
+
+Record whether the chip is **HAILO8** (`hailo8`) or **HAILO8L** (`hailo8l`).
+Do not infer it from "first generation": the original AI Kit used Hailo-8L.
+Use Hailo/Raspberry Pi's supported driver, firmware and Python runtime combination
+for that chip. The worker uses the HailoRT 4.20-style synchronous `InferModel`
+API; that source API was checked, but no installed Pi runtime is certified here.
+Do not install a different kernel or change this Rust server's required 4 KB
+page configuration just to satisfy an accelerator package.
+
+Arrange `/dev/hailo0` read/write access for `rust-telemetry` through a reviewed
+vendor udev/group policy. Do not grant root, sudo or world-writable device access.
+The play fails explicitly if the Python runtime or device access is absent.
+
+#### 2. Train on representative real server samples
+
+Collect at least 1,200 complete eligible samples spanning at least one hour
+(normally at least 100 minutes at five-second cadence). Exercise representative
+player and entity counts. Copy only the numeric feature archive into a private
+operator workspace; never copy RCON credentials or player databases.
+The exporter reads at most the latest 20,000 eligible rows, uses the first 70%
+for fitting and the last 30% for validation, and does not shuffle across time.
+Corrupt archive rows fail explicitly. Missing/unhealthy rows are excluded.
+
+In a separate Python 3.12+ workstation environment:
+
+```bash
+python -m venv .venv-health
+.venv-health/bin/pip install -r requirements-health-model.txt
+.venv-health/bin/python tools/train_server_health.py train \
+  --features /private/copied-features \
+  --output /private/health-model \
+  --architecture hailo8
+```
+
+Substitute `hailo8l` if appropriate. The output directory must be empty.
+Outputs are `server-health.onnx`, NHWC `calibration.npy` and `manifest.json`.
+Inspect `validation_rmse` versus `median_baseline_rmse`: lower is better.
+Constant metrics or poor coverage can give little useful learned signal.
+The CPU reference and runtime only accept workloads inside the observed input
+ranges; new workloads need additional real data and retraining.
+
+#### 3. Compile in a supported x86-64 Linux Hailo SDK environment
+
+Transfer the model directory and check out this repository in your licensed,
+compatible SDK environment. Use that environment's Python/numpy; do not install the workstation
+requirements over the SDK's own dependency pins.
+
+```bash
+python tools/train_server_health.py compile --model-dir /private/health-model
+```
+
+Compilation must actually succeed. This creates `server-health.hef` and binds its
+SHA256 into the manifest. Keep ONNX, calibration, compiler/runtime versions and
+validation results together as a private versioned artifact. Retrain/compile
+into a new directory rather than overwriting the deployed model.
+
+#### 4. Deploy and prove real inference
+
+In private host vars or AWX:
+
+```yaml
+rust_telemetry_hat_enabled: true
+rust_telemetry_hat_model_dir: /absolute/controller/path/health-model
+```
+
+Run the normal telemetry playbook with your private inventory:
+
+```bash
+ansible-playbook -i inventory/hosts.local.yml playbooks/telemetry.yml
+```
+
+The model/manifest are root-owned, group-readable under `/opt/rustberrypi/models`.
+The separate `rust-health-hat.service` runs as `rust-telemetry`, with a 256 MiB
+memory limit, 15% CPU quota, one-second inference timeout and a 30-second systemd
+watchdog. The unit also hides the RCON credential and player-history file.
+It cannot restart Rust or change game settings. A worker crash or hung
+vendor runtime cannot block the telemetry sampling thread.
+With `rust_start: true`, deployment also waits for a real fresh HAT result
+(`ready` or `review`), not merely an active systemd unit. It allows up to
+7.5 minutes for the five-minute game-uptime gate and model startup, then fails
+explicitly if inference is still unavailable. Preparation with `rust_start: false`
+skips this gate and is not evidence of working hardware.
+
+On the Pi:
+
+```bash
+sudo systemctl status rust-health-hat --no-pager
+sudo journalctl -u rust-health-hat -n 50 --no-pager
+curl -fsS http://127.0.0.1:8090/api/status \
+  | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin)["server_health"],indent=2))'
+```
+
+For a single hardware inference test, first stop the worker so it does not contend
+for the device, then run:
+
+```bash
+sudo systemctl stop rust-health-hat
+cd /opt/rustberrypi
+sudo -u rust-telemetry /usr/bin/python3 -m telemetry.hat --once
+sudo systemctl start rust-health-hat
+```
+
+`--once` exits nonzero unless actual Hailo inference succeeds with a valid
+prediction. It never substitutes CPU output. Every result must match the CPU
+reference within 0.05 normalized units per output, before any score is accepted.
+Predictions are compared against observed metrics with a three-scale threshold
+using holdout RMSE and the CPU monitor's minimum scales. Unlike the CPU monitor,
+HAT residual evidence describes that individual sample, not a six-sample alert.
+The API expires results/source samples after 20 seconds and explicitly reports
+disabled, unavailable and error states. A missing model is not success.
+
+### Tonight's hardware acceptance and rollback
+
+1. Deploy CPU monitoring first; observe real learning and workload changes.
+2. Verify a successful maintenance event leads to matched or explicitly unmatched
+   before/after comparison. Do not run maintenance just to test the UI.
+3. Identify the actual chip and runtime, collect/copy real samples, compile and
+   deploy only after the preceding gates succeed. Compiler failures must be fixed
+   before claiming the HAT path is ready.
+4. Verify real hardware/reference parity, nonzero exit on a wrong checksum or
+   incompatible model, stale/unavailable reporting when the worker is stopped,
+   and continuing telemetry/game operation during worker failures.
+5. Compare Rust FPS, query latency, host CPU, memory and temperature with the
+   worker disabled/enabled under comparable load for at least 30 minutes each.
+   Release acceptance: no new game restarts, mean CPU increase below five
+   percentage points, and median FPS reduction below 5%. These thresholds are
+   acceptance targets, not measured results from this authoring session.
+
+To roll back HAT use, set `rust_telemetry_hat_enabled: false` and converge. This
+stops/disables the worker and removes its result from API analysis; CPU monitoring,
+Rust, dashboards, feature capture and camera settings remain independent.
+To stop immediately, use `sudo systemctl stop rust-health-hat`. No model drives
+automated updates, bans, restarts, tuning or watchdog decisions.
+
+References: [Raspberry Pi AI Kit](https://www.raspberrypi.com/documentation/accessories/ai-kit.html),
+[HailoRT 4.20 Python API](https://github.com/hailo-ai/hailort/blob/v4.20.0/hailort/libhailort/bindings/python/platform/hailo_platform/pyhailort/pyhailort.py).
 
 ## Camera presence sensing
 

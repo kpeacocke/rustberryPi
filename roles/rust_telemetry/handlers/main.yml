@@ -10,3 +10,10 @@
     name: rust-telemetry.service
     daemon_reload: true
     state: restarted
+
+- name: Restart HAT analysis
+  ansible.builtin.systemd_service:
+    name: rust-health-hat.service
+    daemon_reload: true
+    state: restarted
+  when: rust_telemetry_hat_enabled | bool

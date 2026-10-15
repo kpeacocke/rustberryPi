@@ -41,3 +41,24 @@ Chromium is therefore launched with a basic password store and never asks the
 Secret Service for a key, which removes the unlock prompt without weakening any
 other credential on the host. Treat the kiosk account as unattended and do not
 sign browser profiles into accounts or store passwords in them.
+
+Server early-warning analysis is advisory only and never drives game commands,
+restarts, updates, access control or watchdog decisions. Its bounded persistent
+state and optional training corpus contain numeric metrics and counts, not player
+identities, logs, credentials or camera data. Copying the corpus off-device is an
+explicit operator action; neither worker uploads data.
+
+Optional Hailo inference runs in a separate resource-limited service as the
+unprivileged telemetry account. Its unit hides the RCON credential and player
+history, limits device access to `/dev/hailo0`, and reads only the loopback numeric
+`/api/health-sample` endpoint. Existing Host allowlisting and read-only HTTP
+behavior apply to that endpoint too. Device permissions must use a reviewed udev
+or group policy, never sudo or world-writable access.
+
+Treat ONNX, calibration, HEF and manifests as trusted operator inputs: the compiler
+and accelerator runtime process native model formats. Models remain root-owned;
+the manifest pins the HEF checksum and inference must pass CPU-reference parity.
+A checksum detects accidental model mixing, not a malicious trusted model
+producer. Do not publish host-specific model/calibration artifacts. Missing,
+invalid, stale or failing accelerator output is explicitly unavailable; it does
+not replace ordinary telemetry or suppress existing safety checks.

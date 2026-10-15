@@ -1,0 +1,38 @@
+[Unit]
+Description=Advisory Rust server analysis on Hailo
+After=rust-telemetry.service
+RequiresMountsFor=/srv/rust
+StartLimitIntervalSec=300
+StartLimitBurst=3
+
+[Service]
+Type=notify
+NotifyAccess=main
+User=rust-telemetry
+Group=rust-telemetry
+WorkingDirectory=/opt/rustberrypi
+ExecStart=/usr/bin/python3 -m telemetry.hat
+Restart=on-failure
+RestartSec=10
+WatchdogSec=30
+TimeoutStartSec=30
+TimeoutStopSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/srv/rust/data/.rustberrypi-telemetry
+ProtectHome=true
+InaccessiblePaths=/etc/rustberrypi/rcon-password
+InaccessiblePaths=-/srv/rust/data/.rustberrypi-telemetry/players.json
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_INET AF_UNIX
+DevicePolicy=closed
+DeviceAllow=/dev/hailo0 rw
+UMask=0077
+MemoryMax=256M
+CPUQuota=15%
+
+[Install]
+WantedBy=multi-user.target

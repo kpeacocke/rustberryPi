@@ -13,13 +13,46 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 ROOT = Path(__file__).resolve().parents[1]
-SPEC = importlib.util.spec_from_file_location('telemetry_server', ROOT / 'telemetry/server.py')
+SPEC = importlib.util.spec_from_file_location('telemetry.server', ROOT / 'telemetry/server.py')
 server = importlib.util.module_from_spec(SPEC)
 with patch.dict(sys.modules, {'psutil': MagicMock(), 'websocket': MagicMock()}):
     SPEC.loader.exec_module(server)
 
 
 class TelemetryTests(unittest.TestCase):
+    def test_collector_wires_advisory_analysis_and_numeric_worker_sample(self):
+        with tempfile.TemporaryDirectory() as folder:
+            collector = server.Collector({'password_file': '/not-read', 'show_names': False,
+                                          'companion_port': 28083, 'feature_capture': False,
+                                          'health_state_file': str(Path(folder) / 'health.json')})
+            with patch.object(server.psutil, 'virtual_memory',
+                              return_value=SimpleNamespace(percent=50, used=1024, total=2048, available=1024)), \
+                    patch.object(server.psutil, 'swap_memory', return_value=SimpleNamespace(used=0)), \
+                    patch.object(server.psutil, 'disk_usage', return_value=SimpleNamespace(free=10**10, percent=30)), \
+                    patch.object(server.psutil, 'cpu_percent', return_value=[30, 30]), \
+                    patch.object(server.psutil, 'boot_time', return_value=time.time() - 3600), \
+                    patch.object(server.psutil, 'net_io_counters',
+                                 return_value=SimpleNamespace(bytes_recv=100, bytes_sent=100)), \
+                    patch.object(server.psutil, 'disk_io_counters',
+                                 return_value=SimpleNamespace(read_bytes=100, write_bytes=100)), \
+                    patch.object(server, 'unit_status', return_value={'ActiveState': 'active', 'NRestarts': '0'}), \
+                    patch.object(server, 'a2s_probe', return_value=(True, 2)), \
+                    patch.object(server, 'run', return_value='throttled=0x0'), \
+                    patch.object(server.socket, 'socket') as sock, \
+                    patch.object(collector.rcon_session, 'poll') as poll:
+                sock.return_value.__enter__.return_value.connect_ex.return_value = 1
+                poll.return_value = {'serverinfo': {'Framerate': 60, 'EntityCount': 1000, 'Uptime': 900},
+                                     'playerlist': [{'SteamID': 'private', 'DisplayName': 'private'}]}
+                collector.collect()
+                self.assertEqual(collector.snapshot['server_health']['status'], 'learning')
+                self.assertEqual(collector.snapshot['server_health']['hat']['status'], 'disabled')
+                self.assertEqual(collector.health_sample['player_count'], 1)
+                self.assertNotIn('private', json.dumps(collector.health_sample))
+                poll.return_value = None
+                collector.collect()
+                self.assertEqual(collector.snapshot['server_health']['status'], 'unavailable')
+                self.assertIsNone(collector.health_sample['player_count'])
+
     def test_exhausted_recovery_is_urgent_even_after_manual_recovery(self):
         suggestions = server.suggestions({'watchdog': {'blocked': True, 'status': 'healthy'}})
         self.assertTrue(any(item['severity'] == 'urgent' and item['title'] == 'Automatic recovery exhausted'
@@ -147,7 +180,8 @@ class TelemetryTests(unittest.TestCase):
             connect.assert_called_once()
 
     def test_http_read_only_and_host_allowlist(self):
-        collector = SimpleNamespace(lock=threading.Lock(), snapshot={'sampled_at': time.time()})
+        collector = SimpleNamespace(lock=threading.Lock(), snapshot={'sampled_at': time.time()},
+                                    health_sample={'schema': 1, 'at': time.time(), 'fps': 60})
         httpd = ThreadingHTTPServer(('127.0.0.1', 0), server.handler(collector, ROOT / 'dashboard', 0))
         port = httpd.server_address[1]
         httpd.RequestHandlerClass = server.handler(collector, ROOT / 'dashboard', port)
@@ -155,14 +189,20 @@ class TelemetryTests(unittest.TestCase):
         thread.start()
         try:
             for method, path, host, expected in [('GET', '/api/status', f'127.0.0.1:{port}', 200),
+                                               ('GET', '/api/health-sample', f'127.0.0.1:{port}', 200),
                                                ('GET', '/api/status', 'attacker.example', 403),
+                                               ('GET', '/api/health-sample', 'attacker.example', 403),
                                                ('POST', '/api/status', f'127.0.0.1:{port}', 501),
+                                               ('POST', '/api/health-sample', f'127.0.0.1:{port}', 501),
                                                ('GET', '/../../etc/passwd', f'127.0.0.1:{port}', 404)]:
                 connection = http.client.HTTPConnection('127.0.0.1', port)
                 connection.request(method, path, headers={'Host': host})
                 response = connection.getresponse()
                 self.assertEqual(response.status, expected)
-                response.read()
+                body = response.read()
+                if path == '/api/health-sample' and expected == 200:
+                    self.assertEqual(json.loads(body), collector.health_sample)
+                    self.assertNotIn('players', json.loads(body))
                 connection.close()
         finally:
             httpd.shutdown()

@@ -68,6 +68,22 @@ This does not enable automatic desktop login. Change the launcher port with
 Browser overhead on a Pi running FEX must be measured on the actual device;
 close unused desktop applications and compare server performance before/after.
 
+## Server early warning
+
+Overview shows the advisory CPU baseline state and optional HAT worker status.
+System additionally lists measured deviations, missing metrics and the latest
+verified maintenance's workload-matched before/after medians. Learning,
+unavailable data and unmatched workloads are not displayed as successful health
+checks. Existing threshold suggestions remain separate. On the 1920x1080 System
+display, detailed analysis and long check lists scroll within their panels; the
+analysis panel is keyboard-focusable. The compact Overview summary preserves the
+1280x720 five-player kiosk layout.
+
+Neither analyzer can change the server or trigger a restart. The HAT uses numeric
+server telemetry, not the camera. It is disabled until a real chip-specific model
+has been trained, compiled and deployed. See
+[analysis, model preparation and hardware acceptance](../telemetry/README.md#server-early-warning-and-hailo).
+
 ## Blanking the screens when the room is empty
 
 Set `rust_telemetry_screen_blank: true` to switch the displays off after

@@ -714,11 +714,21 @@ No new public ports are opened. Update probes inspect available versions and
 refresh package indexes; they never install game or OS updates.
 
 Telemetry also keeps a small local feature archive of the numeric health and
-latency samples it already collects, so later trend and anomaly work has history
-to draw on. Nothing reads it today. It is capped by both age and size, stays on
-the Pi, and records counts only: no names, IDs, addresses or log text.
+latency samples it already collects. It is capped by both age and size, stays on
+the Pi unless an operator copies it for offline training, and records counts only:
+no names, IDs, addresses or log text.
 `rust_telemetry_feature_capture: false` disables it. See
 [feature archive](telemetry/README.md) for the schema and retention settings.
+
+The dashboards include **server early warning**: a bounded CPU statistical
+baseline matched to player count and entity band, sustained-deviation evidence,
+and workload-matched comparisons after verified maintenance. It is advisory only:
+it cannot restart Rust, change configuration or suppress the existing watchdog
+and threshold warnings. Missing data and insufficient history remain explicit.
+An optional isolated Hailo-8/8L worker runs a learned workload-conditioned
+predictor with CPU-reference parity checks. It requires real training data,
+Hailo's compiler and a chip-specific compiled model; no pretrained or
+hardware-certified model is bundled. See [server analysis and HAT commissioning](telemetry/README.md#server-early-warning-and-hailo).
 
 Chromium runs with its own password store, so an auto-login desktop never blocks
 on a keyring unlock dialog before the dashboards open. Optional
