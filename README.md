@@ -135,7 +135,7 @@ it cannot simulate the filesystem mount, reboot or emulated runtime. Syntax chec
 and helper tests are safe offline checks. Do not use `--start-at-task` to bypass
 storage validation.
 
-The roles execute in this order: prerequisites → kernel → USB → FEX/RootFS →
+The roles execute in this order: prerequisites → kernel → detected peripherals → USB → FEX/RootFS →
 SteamCMD → Rust/service/firewall → backup hooks → A2S game readiness. A smaller
 `playbooks/bootstrap.yml` stops after storage preparation.
 
@@ -702,6 +702,16 @@ Changing administrator rights triggers the same graceful stop/restart as player
 access changes. Reconnect after deployment to refresh your game authorization.
 
 ## Optional three-screen dashboards
+
+Both the full deployment and telemetry-only playbook run automatic peripheral
+discovery. A detected Hailo-8-family PCI device gets the minimal driver, firmware,
+runtime, matching running-kernel headers and restricted device permissions.
+A bound supported CSI camera sensor gets Picamera2, camera utilities and display
+power tooling, with enumeration checked without capture. Missing peripherals are
+skipped. Provisioning neither enables AI inference nor turns on the camera:
+the compiled-model and presence flags below remain independent.
+See [automatic peripheral setup](telemetry/README.md#automatic-peripheral-setup)
+for kernel compatibility, permissions and recovery limits.
 
 The separate `dashboard/` and `telemetry/` directories provide local-only,
 read-only views for the game/player list, touchscreen overview, and Pi health /

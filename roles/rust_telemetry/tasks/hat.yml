@@ -1,4 +1,14 @@
 ---
+- name: Grant collector restricted access to detected accelerator
+  ansible.builtin.user:
+    name: rust-telemetry
+    groups: rust-hailo
+    append: true
+  notify: Restart HAT analysis
+  when:
+    - pi_hardware_detected is defined
+    - pi_hardware_detected.hailo | length > 0
+
 - name: Require explicitly supplied compiled HAT model
   ansible.builtin.assert:
     that:
@@ -7,7 +17,7 @@
     fail_msg: Build and compile a model first; set rust_telemetry_hat_model_dir to its controller directory.
   when: rust_telemetry_hat_enabled | bool
 
-- name: Verify preinstalled Hailo runtime and device access as collector
+- name: Verify provisioned Hailo runtime and device access as collector
   ansible.builtin.command:
     argv:
       - runuser

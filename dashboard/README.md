@@ -101,8 +101,12 @@ also restored when the process exits or is killed.
 Blanking uses `wlopm` to power the outputs down, falling back to `xset dpms` on
 X11 sessions. Outputs are never disabled, only powered down, because disabling an
 output makes the compositor reflow clients and would scatter the three positioned
-windows. Ansible installs `wlopm` and `python3-picamera2` and adds the desktop
-account to the `video` group when the feature is enabled.
+windows. Both deployment playbooks detect bound CSI sensors and install `wlopm`,
+`rpicam-apps-lite` and `python3-picamera2` automatically, without capture.
+A configured desktop account is added to the `video` group; log in again for
+membership to take effect. Camera presence remains explicitly opt-in.
+Enabling it without a detected camera fails clearly. The autostart entry starts
+at the next desktop login, not immediately in an existing graphical session.
 
 Tune sensitivity with `rust_telemetry_screen_pixel_threshold` (how much a sample
 must change to count, 0-255) and `rust_telemetry_screen_area_fraction` (how much

@@ -1,0 +1,32 @@
+---
+- name: Install detected camera and display power tooling
+  ansible.builtin.apt:
+    name: [python3-picamera2, rpicam-apps-lite, wlopm]
+    state: present
+    update_cache: true
+    cache_valid_time: 86400
+    install_recommends: false
+    fail_on_autoremove: true
+
+- name: Verify camera Python runtime without capture
+  ansible.builtin.command:
+    argv: [/usr/bin/python3, -c, 'import picamera2; print("Camera Python imports OK")']
+  changed_when: false
+
+- name: Verify camera enumeration without starting capture
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - -c
+      - >-
+        import json;
+        from picamera2 import Picamera2;
+        cameras=Picamera2.global_camera_info();
+        print(json.dumps(cameras));
+        assert cameras, 'A bound camera sensor exists but libcamera cannot enumerate it'
+  register: pi_hardware_camera_identity
+  changed_when: false
+
+- name: Report available cameras without opening them
+  ansible.builtin.debug:
+    var: pi_hardware_camera_identity.stdout_lines

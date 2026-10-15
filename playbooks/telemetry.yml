@@ -3,4 +3,5 @@
   hosts: rust_servers
   become: true
   roles:
+    - pi_hardware
     - rust_telemetry

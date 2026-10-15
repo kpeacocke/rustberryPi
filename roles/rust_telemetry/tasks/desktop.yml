@@ -30,7 +30,7 @@
     group: "{{ ansible_facts.getent_passwd[rust_telemetry_desktop_user][2] }}"
     mode: '0700'
   loop: [.config, .config/autostart]
-  when: rust_telemetry_desktop_autostart | bool
+  when: rust_telemetry_desktop_autostart | bool or rust_telemetry_screen_blank | bool
 
 - name: Install desktop startup entry
   ansible.builtin.template:
@@ -47,10 +47,12 @@
     state: absent
   when: not rust_telemetry_desktop_autostart | bool
 
-- name: Install camera and display power tooling
-  ansible.builtin.apt:
-    name: [python3-picamera2, wlopm]
-    state: present
+- name: Require detected camera before enabling presence
+  ansible.builtin.assert:
+    that:
+      - pi_hardware_detected is defined
+      - pi_hardware_detected.cameras | length > 0
+    fail_msg: No bound supported CSI sensor detected; check camera connection, firmware and boot configuration before enabling presence.
   when: rust_telemetry_screen_blank | bool
 
 - name: Grant the desktop account camera access
@@ -58,7 +60,7 @@
     name: "{{ rust_telemetry_desktop_user }}"
     groups: video
     append: true
-  when: rust_telemetry_screen_blank | bool
+  when: pi_hardware_detected is defined and pi_hardware_detected.cameras | length > 0
 
 - name: Install presence startup entry
   ansible.builtin.template:

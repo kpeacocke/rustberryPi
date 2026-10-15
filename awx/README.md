@@ -139,9 +139,12 @@ uses host variables `rust_telemetry_hat_enabled: true` and
 `rust_telemetry_hat_model_dir`: the latter must be an absolute path accessible
 **inside the execution environment**, not a path on your laptop. Supply the
 private compiled HEF/manifest through a reviewed read-only artifact mount or
-private deployment source; do not commit them to the public project. Driver,
-runtime, device permissions, model compilation and real hardware acceptance are
-prerequisites. See [HAT commissioning](../telemetry/README.md#server-early-warning-and-hailo).
+private deployment source; do not commit them to the public project. Both deploy
+playbooks automatically detect Hailo/CSI hardware and provision its runtime,
+driver and permissions; no manual package job or camera capture is needed.
+Exact running-kernel headers must be available. Model compilation and real
+hardware acceptance remain prerequisites for enabling HAT inference.
+See [HAT commissioning](../telemetry/README.md#server-early-warning-and-hailo).
 No new survey, credential or game-control permission is required.
 
 A genuinely fleet-wide, non-secret default belongs in

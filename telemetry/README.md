@@ -184,7 +184,72 @@ and cannot run on this macOS controller or the ARM game server. A small network
 can still hit compiler allocation/quantization limitations. ONNX export and a
 mocked SDK contract test do not prove compilation or accelerator compatibility.
 
-#### 1. Identify the hardware and compatible runtime on the Pi
+### Automatic peripheral setup
+
+`playbooks/rust.yml` and `playbooks/telemetry.yml` run `pi_hardware` before
+telemetry, including when HAT inference and camera presence are disabled.
+The full deployment does this after selecting/verifying the 4 KB kernel.
+No accelerator/camera feature flag is needed just to prepare detected hardware.
+
+Discovery reads sysfs without opening an accelerator or capturing a frame:
+
+- PCI vendor `0x1e60` identifies Hailo hardware. Automatic setup accepts device
+  ID `0x2864` (Hailo-8 family); a different Hailo ID fails explicitly rather than
+  installing the wrong generation's driver. Firmware identification establishes
+  8 versus 8L after the driver is available.
+- A **bound** I2C sensor named `imx...`, `ov...` or `ar...` identifies a supported
+  CSI camera candidate. Your IMX708 is covered. An unbound device, a generic video
+  encoder node or a touchscreen is not treated as a working camera.
+  USB cameras and unusual sensor names are outside automatic CSI provisioning.
+- If a peripheral is absent, its package/setup tasks are skipped. Detection
+  read errors fail visibly instead of being converted into "no hardware".
+
+For a Hailo-8-family device, Ansible verifies Debian 13 arm64 and 4 KB pages,
+reads the actual running kernel, and installs its **exact versioned header
+package** only when its build headers are missing. It installs DKMS before
+`hailort-pcie-driver`, `hailort` and `python3-hailort`; the vendor package supplies
+firmware and builds/loads its driver. If an installed DKMS module is missing for
+the current kernel, the role runs `dkms autoinstall` and verifies the module.
+It loads `hailo_pci` if needed, persists activation, waits for the device and
+checks Python imports plus `hailortcli fw-control identify`.
+
+The role never requests a distribution upgrade, different kernel image or reboot.
+APT is configured to refuse removals and avoid recommended package expansion.
+If exact headers are no longer available from your repositories, the play fails:
+restore the matching header package or deliberately schedule a compatible kernel
+maintenance window. Do not silently substitute headers for a different kernel.
+An existing incompatible driver/runtime also fails identification; that requires
+review rather than an automatic unload of a live accelerator.
+
+A root-owned late udev rule overrides the vendor's world-writable device rule
+with group `rust-hailo` and mode `0660`, before driver installation. Existing
+`/dev/hailo0` permissions are corrected immediately. The telemetry role adds its
+service account to `rust-hailo`; HAT inference still needs explicit enablement
+and a compiled model. No camera/video inference stack or compiler is installed
+by the minimal Hailo setup.
+
+For a detected camera, Ansible installs `python3-picamera2`, `rpicam-apps-lite`
+and `wlopm`, checks the Python import, then uses
+`Picamera2.global_camera_info()` to verify libcamera enumeration **without
+starting a stream**. If a desktop account is configured, it gains `video` group
+membership, effective at its next login. Detection alone does not enable camera
+autostart or modify boot overlays. A connected but unbound sensor needs firmware/
+boot/connection diagnosis; it is not fabricated into a successful camera setup.
+
+Enabling `rust_telemetry_screen_blank` requires a detected camera and explicit
+desktop account. Presence autostart directories are created even when dashboard
+browser autostart is disabled. The presence process begins at the next desktop
+login; converging an already-open session does not launch it automatically.
+
+#### 1. Identify the provisioned hardware and compatible runtime on the Pi
+
+First deploy the normal telemetry playbook (or the full Rust playbook), using
+your private inventory. Hardware setup runs automatically; leave HAT inference
+disabled until a compiled model exists:
+
+```bash
+ansible-playbook -i inventory/hosts.local.yml playbooks/telemetry.yml
+```
 
 ```bash
 hailortcli fw-control identify
@@ -200,9 +265,8 @@ API; that source API was checked, but no installed Pi runtime is certified here.
 Do not install a different kernel or change this Rust server's required 4 KB
 page configuration just to satisfy an accelerator package.
 
-Arrange `/dev/hailo0` read/write access for `rust-telemetry` through a reviewed
-vendor udev/group policy. Do not grant root, sudo or world-writable device access.
-The play fails explicitly if the Python runtime or device access is absent.
+The play configures restricted `/dev/hailo0` access for `rust-telemetry`
+automatically and fails explicitly if the runtime or device access is absent.
 
 #### 2. Train on representative real server samples
 
@@ -349,9 +413,10 @@ detection, and no identification of any kind.
 
 The kill switch is `rust_telemetry_screen_blank: false`, which is also the default.
 Converging with it disabled removes the autostart entry, so nothing starts the
-camera on the next login. The camera is only ever opened by this feature. Enabling
-it installs `python3-picamera2` and `wlopm` and adds the desktop account to the
-`video` group, which takes effect at the next login. Sensitivity is tuned with
+camera on the next login. The camera is only ever opened by this feature.
+The automatic hardware role has already installed `python3-picamera2` and `wlopm`
+for a detected sensor. A configured desktop account is added to the `video`
+group, which takes effect at the next login. Sensitivity is tuned with
 `rust_telemetry_screen_pixel_threshold` and `rust_telemetry_screen_area_fraction`;
 see [display setup](../dashboard/README.md) for what those two control.
 

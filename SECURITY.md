@@ -52,8 +52,16 @@ Optional Hailo inference runs in a separate resource-limited service as the
 unprivileged telemetry account. Its unit hides the RCON credential and player
 history, limits device access to `/dev/hailo0`, and reads only the loopback numeric
 `/api/health-sample` endpoint. Existing Host allowlisting and read-only HTTP
-behavior apply to that endpoint too. Device permissions must use a reviewed udev
-or group policy, never sudo or world-writable access.
+behavior apply to that endpoint too. Automatic hardware setup installs a late
+udev rule restricting Hailo devices to `rust-hailo` with mode `0660`, overriding
+the vendor's `0666` default, and adds the telemetry service account to that group.
+Neither sudo nor world-writable device access is granted.
+
+Hardware provisioning discovers bound CSI sensors and installs/enumerates their
+runtime without starting capture. Continuous presence sensing stays opt-in.
+Missing peripherals skip provisioning; unsupported Hailo IDs, missing exact kernel
+headers and failed driver/runtime verification are explicit failures. The role
+does not reboot or request a kernel image upgrade.
 
 Treat ONNX, calibration, HEF and manifests as trusted operator inputs: the compiler
 and accelerator runtime process native model formats. Models remain root-owned;

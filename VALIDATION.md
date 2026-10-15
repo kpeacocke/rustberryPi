@@ -1,5 +1,42 @@
 # Validation record
 
+## Automatic accelerator and camera provisioning — 2026-10-15
+
+Added `pi_hardware` to both full deployment (after 4 KB kernel verification)
+and telemetry-only deployment. The user's live output establishes a PCI-visible
+Hailo-8-family device (`1e60:2864`), missing Hailo driver/runtime, a 4 KB running
+kernel, and an IMX708 bound in the boot log. That evidence motivated automatic
+provisioning; **the new role has not yet run on the Pi**.
+
+Discovery tests use a temporary sysfs tree and cover those exact PCI/sensor
+values, unrelated devices, absent/unbound peripherals and explicit read failures.
+Provisioning contract tests check package selection, header/kernel safeguards,
+permissions, playbook ordering, capture-free camera enumeration and presence-only
+startup directory creation. They do not prove a driver build or physical capture.
+
+| Check | Result |
+| --- | --- |
+| `/opt/homebrew/Cellar/ansible/14.5.0/libexec/bin/python -m unittest discover -s tests -p test_pi_hardware.py -v` | 9 passed |
+| `/opt/homebrew/Cellar/ansible/14.5.0/libexec/bin/python -m unittest discover -s tests -v` | 177 discovered: 175 passed, 2 optional model tests skipped |
+| `ansible-lint` | Passed production profile, 0 failures |
+| `ansible-playbook -i inventory/hosts.yml playbooks/rust.yml --syntax-check` | Passed |
+| `ansible-playbook -i inventory/hosts.yml playbooks/telemetry.yml --syntax-check` | Passed |
+| `git diff --check` | Passed |
+
+Inspected Raspberry Pi's published Trixie package metadata and the
+`hailort-pcie-driver` 4.23.0 installer/rule. The driver installer supplies firmware,
+builds with DKMS (falling back to a direct build), and loads/reloads the module.
+Its shipped rule grants mode `0666`; the project installs its later restricted
+`0660`/`rust-hailo` rule before package configuration. No dependency on
+`hailo-all`, TAPPAS or camera inference models was added.
+
+Physical acceptance still requires exact running-kernel headers to resolve,
+the driver to build/load, successful firmware identification and Python imports,
+working service-account permissions, and libcamera enumeration. Repeat the play
+to verify convergence. Enabling presence additionally requires a desktop login
+with refreshed group membership and actual blank/wake checks; hardware discovery
+alone intentionally does not enable continuous camera use.
+
 ## Server early warning and Hailo preparation — 2026-10-15
 
 Software checks ran locally on macOS, **not on the Pi**. The CPU advisory monitor,

@@ -1,0 +1,152 @@
+---
+- name: Require supported accelerator and operating system
+  ansible.builtin.assert:
+    that:
+      - ansible_facts['architecture'] == 'aarch64'
+      - ansible_facts['distribution'] == 'Debian'
+      - ansible_facts['distribution_major_version'] == '13'
+      - pi_hardware_detected.hailo | map(attribute='device') | difference(['0x2864']) | length == 0
+    fail_msg: Automatic provisioning supports Debian 13 arm64 and Hailo-8-family PCI ID 1e60:2864 only.
+
+- name: Read running kernel rather than stale pre-reboot facts
+  ansible.builtin.command: uname -r
+  register: pi_hardware_kernel
+  changed_when: false
+
+- name: Verify running kernel has 4 KB pages
+  ansible.builtin.command: getconf PAGESIZE
+  register: pi_hardware_pages
+  changed_when: false
+  failed_when: pi_hardware_pages.stdout | trim != '4096'
+
+- name: Look for exact running-kernel build headers
+  ansible.builtin.stat:
+    path: '/lib/modules/{{ pi_hardware_kernel.stdout | trim }}/build/Makefile'
+  register: pi_hardware_headers
+
+- name: Refresh package metadata for detected accelerator
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 86400
+
+- name: Install only headers for the exact running kernel if missing
+  when: not pi_hardware_headers.stat.exists
+  block:
+    - name: Require exact running-kernel header package
+      ansible.builtin.command:
+        argv: [apt-cache, show, 'linux-headers-{{ pi_hardware_kernel.stdout | trim }}']
+      register: pi_hardware_header_package
+      changed_when: false
+      failed_when: pi_hardware_header_package.rc != 0 or pi_hardware_header_package.stdout | trim | length == 0
+
+    - name: Install exact headers without removing packages or selecting another kernel
+      ansible.builtin.apt:
+        name: 'linux-headers-{{ pi_hardware_kernel.stdout | trim }}'
+        state: present
+        install_recommends: false
+        fail_on_autoremove: true
+
+- name: Create restricted accelerator group
+  ansible.builtin.group:
+    name: rust-hailo
+    system: true
+
+- name: Restrict accelerator access before vendor package loads the driver
+  ansible.builtin.copy:
+    content: |
+      SUBSYSTEM=="hailo_chardev", KERNEL=="hailo[0-9]*", GROUP="rust-hailo", MODE="0660"
+    dest: /etc/udev/rules.d/99-rustberrypi-hailo.rules
+    owner: root
+    group: root
+    mode: '0644'
+  register: pi_hardware_udev
+
+- name: Reload udev rules before driver installation # noqa: no-handler -- Vendor postinst immediately loads the device.
+  ansible.builtin.command: udevadm control --reload-rules
+  changed_when: true
+  when: pi_hardware_udev.changed
+
+- name: Install DKMS before vendor driver configuration
+  ansible.builtin.apt:
+    name: dkms
+    state: present
+    install_recommends: false
+    fail_on_autoremove: true
+
+- name: Install minimal Hailo-8 driver and matching runtime
+  ansible.builtin.apt:
+    name: [hailort-pcie-driver, hailort, python3-hailort]
+    state: present
+    install_recommends: false
+    fail_on_autoremove: true
+  register: pi_hardware_hailo_packages
+
+- name: Inspect installed driver for the running kernel
+  ansible.builtin.command: modinfo -F version hailo_pci
+  register: pi_hardware_driver
+  changed_when: false
+  failed_when: pi_hardware_driver.rc not in [0, 1]
+
+- name: Build registered driver for running kernel when missing
+  ansible.builtin.command:
+    argv: [dkms, autoinstall, -k, '{{ pi_hardware_kernel.stdout | trim }}']
+  changed_when: true
+  when: pi_hardware_driver.rc != 0
+
+- name: Require loadable driver after installation or kernel change
+  ansible.builtin.command: modinfo -F version hailo_pci
+  changed_when: false
+
+- name: Read driver load state
+  ansible.builtin.stat:
+    path: /sys/module/hailo_pci
+  register: pi_hardware_module
+
+- name: Load installed accelerator driver without reboot
+  ansible.builtin.command: modprobe hailo_pci
+  changed_when: true
+  when: not pi_hardware_module.stat.exists
+
+- name: Persist driver activation
+  ansible.builtin.copy:
+    content: "hailo_pci\n"
+    dest: /etc/modules-load.d/rustberrypi-hailo.conf
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Apply restricted rules to all existing accelerator nodes # noqa: no-handler -- Must apply before checking device access.
+  ansible.builtin.command: udevadm trigger --action=change --subsystem-match=hailo_chardev
+  changed_when: true
+  when: pi_hardware_udev.changed or pi_hardware_hailo_packages.changed
+
+- name: Wait for accelerator permission events # noqa: no-handler -- Must complete before device verification.
+  ansible.builtin.command: udevadm settle --timeout=30
+  changed_when: false
+  when: pi_hardware_udev.changed or pi_hardware_hailo_packages.changed
+
+- name: Wait for accelerator device
+  ansible.builtin.wait_for:
+    path: /dev/hailo0
+    timeout: 30
+
+- name: Enforce restricted permissions on existing accelerator device
+  ansible.builtin.file:
+    path: /dev/hailo0
+    owner: root
+    group: rust-hailo
+    mode: '0660'
+
+- name: Verify Hailo Python runtime
+  ansible.builtin.command:
+    argv: [/usr/bin/python3, -c, 'import numpy, hailo_platform; print("Hailo Python imports OK")']
+  changed_when: false
+
+- name: Identify accelerator and verify runtime driver firmware compatibility
+  ansible.builtin.command: hailortcli fw-control identify
+  register: pi_hardware_hailo_identity
+  changed_when: false
+
+- name: Report accelerator identity
+  ansible.builtin.debug:
+    var: pi_hardware_hailo_identity.stdout_lines

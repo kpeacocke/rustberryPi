@@ -1,0 +1,35 @@
+---
+- name: Require real peripheral discovery rather than simulated check mode
+  ansible.builtin.assert:
+    that: not ansible_check_mode
+    fail_msg: Use syntax-check for offline validation; hardware discovery and driver provisioning require a real run.
+
+- name: Install read-only peripheral detector
+  ansible.builtin.copy:
+    src: detect.py
+    dest: /usr/local/libexec/rustberrypi-detect-hardware.py
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Detect PCI accelerators and bound camera sensors without capture
+  ansible.builtin.command: /usr/bin/python3 /usr/local/libexec/rustberrypi-detect-hardware.py
+  register: pi_hardware_probe
+  changed_when: false
+  check_mode: false
+
+- name: Remember detected peripherals
+  ansible.builtin.set_fact:
+    pi_hardware_detected: '{{ pi_hardware_probe.stdout | from_json }}'
+
+- name: Report detected peripherals
+  ansible.builtin.debug:
+    var: pi_hardware_detected
+
+- name: Provision detected Hailo-8 family accelerator
+  ansible.builtin.include_tasks: hailo.yml
+  when: pi_hardware_detected.hailo | length > 0
+
+- name: Provision detected camera without starting capture
+  ansible.builtin.include_tasks: camera.yml
+  when: pi_hardware_detected.cameras | length > 0
