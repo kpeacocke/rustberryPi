@@ -20,11 +20,18 @@ A bunch of admin things like updates and backups happen at around 4 am AEST. Ans
 
 SETTINGS
 
-Vanilla Rust. All settings currently default, except...
+Vanilla Rust with slower decay and a longer upkeep period, managed through AWX.
+The settings below are planned for the approved new-world launch; they are not
+confirmation that the live server has changed yet.
 
 +server.worldsize: 1500
-+server.seed: 12345
++server.seed: 1433876491 (proposed new world; current seed remains 12345 until the approved wipe)
 +server.maxplayers: 5
++relationshipmanager.maxteamsize: 5
+decay.scale: 0.25 (quarter-speed decay)
+decay.upkeep_period_minutes: 5760 (four-day upkeep period)
+server.tutorialenabled: false
+Game administrators: none. Everyone plays without owner or moderator privileges.
 +server.saveinterval: 300 (seconds)
 +server.tickrate: 30
 server.itemdespawn: 180 (seconds)
@@ -39,7 +46,7 @@ Progression: Fully blueprints-based with default scrap costs.
 
 FEATURES AND RULES
 
-1. No scheduled admin wipes. We aim to run the latest stable Rust features with vanilla defaults and keep your blueprint progress wherever the game allows it. Mandatory game wipes still apply. A map-only wipe for new map features will be announced and deliberately approved; it loses bases, not intentionally your blueprints. Upstream blueprint resets or incompatible data may still force a reset. I won't demolish your house just because it's Tuesday.
+1. No scheduled admin wipes. We aim to run the latest stable Rust features with the settings above and keep your blueprint progress wherever the game allows it. Mandatory game wipes still apply. A map-only wipe will be announced and deliberately approved; it loses bases, not intentionally your blueprints. AWX gives a ten-minute warning, saves the world and validates a NAS backup before replacing the map. Blueprints and the approved player roster are retained, and the new world is checked before maintenance finishes. Upstream blueprint resets or incompatible data may still force a reset. I won't demolish your house just because it's Tuesday.
 
 2. Free-for-all PvP. Teaming Welcome. Go solo. Make friends. Pool your resources and find out that "our base" means you're grinding stone while Nick experiments with a balcony. Form a team. Build something beautiful with people you trust, then discover someone has used all the metal fragments, making a substantially worse door. Cooperation is encouraged. So is having your own cupboard.
 
