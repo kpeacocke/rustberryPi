@@ -15,6 +15,21 @@ class MaintenanceRefreshTests(unittest.TestCase):
     def tasks(self, role):
         return yaml.safe_load((ROOT / f'roles/{role}/tasks/main.yml').read_text())
 
+    def test_gameplay_report_accepts_progress_before_final_json(self):
+        report = self.tasks('rust_gameplay')[-1]
+        with tempfile.TemporaryDirectory() as directory:
+            playbook = Path(directory) / 'report.yml'
+            playbook.write_text(yaml.safe_dump([{
+                'hosts': 'localhost', 'gather_facts': False,
+                'vars': {'rust_gameplay_result': {'stdout_lines': [
+                    '{"connected_players": 2}', '{"verified": true, "phase": "verified"}']}},
+                'tasks': [report],
+            }]))
+            result = subprocess.run(['ansible-playbook', '-i', 'localhost,', '-c', 'local', str(playbook)],
+                                    capture_output=True, text=True, cwd=ROOT)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn('"verified": true', result.stdout)
+
     def test_gameplay_refresh_waits_for_transaction_exit(self):
         tasks = self.tasks('rust_gameplay')
         operation = next(i for i, task in enumerate(tasks) if 'ansible.builtin.command' in task)

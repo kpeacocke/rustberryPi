@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Guarded, offline gameplay and map-only transactions for an existing deployment."""
 import argparse
-from contextlib import closing
+from contextlib import closing, redirect_stdout
 from datetime import datetime, timezone
 import fcntl
 import json
@@ -82,7 +82,8 @@ def update_unit(text, old, new):
         raise ValueError('Only the managed Procedural Map unit is supported')
     line = starts[0]
     if any(re.search(r'\+' + re.escape(name) + r'\b', line, re.I) for name in
-           (*CONVARS, 'ownerid', 'moderatorid', 'server.levelurl', 'exec')):
+           (*CONVARS, 'ownerid', 'moderatorid', 'global.ownerid', 'global.moderatorid',
+            'server.levelurl', 'exec')):
         raise ValueError('Conflicting startup overrides require review')
     for key in ('identity', 'seed', 'worldsize'):
         pattern = r'(\+server\.' + key + r'\s+)([^\s]+)'
@@ -179,9 +180,10 @@ def write(path, text, mode=0o600):
 def archive_state(destination, stamp):
     target = destination / ('rust-' + stamp + '.tar.gz')
     temporary = target.with_suffix('.partial')
-    with tarfile.open(temporary, 'w:gz', dereference=False) as archive:
-        archive.add(DATA, arcname='data')
-    temporary.chmod(0o600)
+    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(descriptor, 'wb') as stream:
+        with tarfile.open(fileobj=stream, mode='w:gz', dereference=False) as archive:
+            archive.add(DATA, arcname='data')
     digest = backup.sha(temporary)
     backup.checked_archive(temporary, digest)  # Fully read every member before publication.
     temporary.rename(target)
@@ -291,7 +293,8 @@ def execute(request, mount, destination):
             for name in values(request):
                 read_value(name)  # Reject absent/renamed convars on the installed build.
             verify({'server.seed': int(old['seed']), 'server.worldsize': int(old['worldsize'])})
-            maintenance.notices(request['warning'], 'new world' if request['operation'] == 'new-world' else 'gameplay')
+            with redirect_stdout(sys.stderr):
+                maintenance.notices(request['warning'], 'new world' if request['operation'] == 'new-world' else 'gameplay')
             write(STATE / 'offline', 'Guarded gameplay operation; see awx/GAMEPLAY.md\n')
             offline = True
             journal('stopping')

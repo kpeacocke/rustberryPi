@@ -54,4 +54,4 @@
 
 - name: Report verified operation evidence
   ansible.builtin.debug:
-    msg: '{{ rust_gameplay_result.stdout | from_json }}'
+    msg: '{{ rust_gameplay_result.stdout_lines | last | from_json }}'

@@ -57,8 +57,9 @@ class GameplayTests(unittest.TestCase):
         self.assertEqual(g.update_unit(text, old, new), text.replace('seed 123', 'seed 1433876491'))
         with self.assertRaises(ValueError):
             g.update_unit(text, dict(old, seed=42), new)
-        with self.assertRaises(ValueError):
-            g.update_unit(text.rstrip()+' +decay.scale 1\n', old, new)
+        for override in ('+decay.scale 1', '+global.ownerid 123', '+GLOBAL.MODERATORID 123'):
+            with self.subTest(override=override), self.assertRaises(ValueError):
+                g.update_unit(text.rstrip() + ' ' + override + '\n', old, new)
 
     def test_admin_case_and_aliases_are_removed(self):
         self.assertEqual(g.clear_admins('Global.OwnerID 123\nMODERATORID 456\nbanid 789\n',
@@ -119,6 +120,22 @@ class GameplayTests(unittest.TestCase):
             (data / 'linked').symlink_to(data / 'access.json')
             with self.assertRaises(ValueError):
                 g.safe_tree(data)
+
+    def test_partial_archive_is_private_before_compression_and_exclusive(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            data = self.fixture(root)
+            stamp = '20261016T000000.000000Z'
+            partial = root / ('rust-' + stamp + '.tar.partial')
+            def compression_failure(**kwargs):
+                self.assertEqual(partial.stat().st_mode & 0o777, 0o600)
+                raise OSError('fixture write failure')
+            with patch.object(g, 'DATA', data), patch.object(g.tarfile, 'open', side_effect=compression_failure):
+                with self.assertRaises(OSError):
+                    g.archive_state(root, stamp)
+            self.assertEqual(partial.stat().st_mode & 0o777, 0o600)
+            with patch.object(g, 'DATA', data), self.assertRaises(FileExistsError):
+                g.archive_state(root, stamp)
 
     def test_backup_detects_corruption(self):
         with tempfile.TemporaryDirectory() as directory:
