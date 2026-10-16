@@ -45,6 +45,10 @@ def validate(request):
         raise ValueError('Use a boolean tutorial value and an explicitly empty admin list')
     if not re.fullmatch(r'[a-zA-Z0-9_-]+', request['identity']):
         raise ValueError('Invalid identity')
+    description = request.get('description')
+    if description is not None and (not isinstance(description, str) or
+                                    any(c in description for c in ('\r', '\x00'))):
+        raise ValueError('Invalid server description')
     if request['operation'] == 'new-world':
         expected = f"WIPE {request['identity']} {request['seed']} {request['worldsize']} KEEP BLUEPRINTS"
         if request.get('confirm') != expected:
@@ -55,13 +59,52 @@ def values(request):
     return {name: request[key] for name, key in CONVARS.items()}
 
 
+def config_values(request):
+    settings = values(request)
+    if request.get('description') is not None:
+        settings['server.description'] = request['description']
+    return settings
+
+
+def verify_description(request):
+    if request.get('description') is None:
+        return
+    response = rcon('server.description').strip()
+    prefix = 'server.description:'
+    if not response.startswith(prefix):
+        raise ValueError('Unsupported runtime description reply')
+    raw = response[len(prefix):].strip()
+    try:
+        actual = json.loads(raw)
+    except json.JSONDecodeError:
+        actual = raw[1:-1].replace('\\n', '\n') if raw.startswith('"') and raw.endswith('"') else raw
+    if actual != request['description']:
+        raise ValueError('Runtime description differs')
+
+
+def compound_command(line):
+    quoted = escaped = False
+    for char in line:
+        if escaped:
+            escaped = False
+        elif char == '\\' and quoted:
+            escaped = True
+        elif char == '"':
+            quoted = not quoted
+        elif char == ';' and not quoted:
+            return True
+    if quoted:
+        raise ValueError('Unterminated configuration string')
+    return False
+
+
 def reconcile(text, settings):
     """Remove every duplicate, including differently cased convars; keep other lines."""
     result = []
     for line in text.splitlines():
         stripped = line.strip()
         if stripped and not stripped.startswith('//'):
-            if ';' in stripped:
+            if compound_command(stripped):
                 raise ValueError('Compound server.cfg commands require review')
             key = stripped.split()[0].lower()
             if key in settings:
@@ -72,7 +115,8 @@ def reconcile(text, settings):
                 raise ValueError('Conflicting world/admin configuration requires review')
         result.append(line)
     return '\n'.join(result).rstrip('\n') + '\n' + ''.join(
-        f'{key} {str(value).lower()}\n' for key, value in settings.items())
+        f'{key} {json.dumps(value, ensure_ascii=False) if isinstance(value, str) else str(value).lower()}\n'
+        for key, value in settings.items())
 
 
 def update_unit(text, old, new):
@@ -217,8 +261,10 @@ def preflight(request, mount, destination):
     if starts != [line for line in unit_text.splitlines() if line.startswith('ExecStart=')]:
         raise ValueError('Service drop-in overrides require review')
     unit = update_unit(unit_text, old, new)
+    if request.get('description') is not None and re.search(r'\+server\.description\b', unit, re.I):
+        raise ValueError('Startup description override requires review')
     cfg = DATA / old['identity'] / 'cfg'
-    reconcile((cfg / 'server.cfg').read_text(), values(request))
+    reconcile((cfg / 'server.cfg').read_text(), config_values(request))
     previous = json.loads((DATA / 'access.json').read_text())
     desired = access.policy({'mode': 'preserve', 'admins': []}, previous)
     clear_admins((cfg / 'users.cfg').read_text() if (cfg / 'users.cfg').exists() else '', desired)
@@ -239,7 +285,7 @@ def prepare(stage, request, new):
             removed.append(path.name)
             path.unlink()
     cfg = identity / 'cfg'
-    write(cfg / 'server.cfg', reconcile((cfg / 'server.cfg').read_text(), values(request)))
+    write(cfg / 'server.cfg', reconcile((cfg / 'server.cfg').read_text(), config_values(request)))
     policy_path = stage / 'access.json'
     desired = access.policy({'mode': 'preserve', 'admins': []}, json.loads(policy_path.read_text()))
     users = cfg / 'users.cfg'
@@ -338,6 +384,7 @@ def execute(request, mount, destination):
             health.wait_ready(request['timeout'], require_rcon=True)
             run('/usr/bin/python3', str(Path(__file__).with_name('access_runtime.py')))
             verify(values(request))
+            verify_description(request)
             users = DATA / new['identity'] / 'cfg/users.cfg'
             desired = json.loads((DATA / 'access.json').read_text())
             if desired.get('admins') != [] or clear_admins(users.read_text(), desired) != users.read_text():
