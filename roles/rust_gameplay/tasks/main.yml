@@ -40,7 +40,7 @@
       {{ {'operation': rust_gameplay_operation, 'identity': rust_identity,
           'decay_scale': rust_decay_scale, 'upkeep': rust_upkeep_period_minutes,
           'team_size': rust_maxteamsize, 'tutorial': rust_tutorial_enabled,
-          'admins': rust_admin_players, 'warning': rust_gameplay_warning_seconds,
+          'admins': rust_admin_players, 'description': rust_description | default(none), 'warning': rust_gameplay_warning_seconds,
           'timeout': rust_gameplay_health_timeout, 'seed': rust_new_world_seed,
           'worldsize': rust_new_world_size, 'confirm': rust_new_world_confirm} | to_json }}
   async: 14400

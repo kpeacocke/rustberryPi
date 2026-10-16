@@ -46,9 +46,37 @@ class GameplayTests(unittest.TestCase):
         self.assertIn('rcon.password "secret"', updated)
         self.assertIn('server.tutorialenabled false', updated)
         self.assertEqual(g.reconcile(updated, g.values(request())), updated)
-        for line in ('server.seed 123', 'exec other.cfg', 'ownerid 123', 'decay.scale 1; quit'):
+        for line in ('server.seed 123', 'exec other.cfg', 'ownerid 123', 'decay.scale 1; quit', 'server.description "safe"; quit',
+                     "server.description 'unsafe;quit'"):
             with self.assertRaises(ValueError):
                 g.reconcile(line, g.values(request()))
+
+    def test_description_preserves_case_quotes_newlines_and_is_idempotent(self):
+        description = 'Welcome "Mates"; play fair!\nDecay: 0.25x.'
+        req = request(description=description)
+        g.validate(req)
+        updated = g.reconcile('SERVER.DESCRIPTION "old"\nrcon.password "secret"\n', g.config_values(req))
+        self.assertEqual(updated.count('server.description'), 1)
+        line = next(line for line in updated.splitlines() if line.startswith('server.description '))
+        self.assertEqual(json.loads(line.split(' ', 1)[1]), description)
+        self.assertEqual(g.reconcile(updated, g.config_values(req)), updated)
+        with patch.object(g, 'rcon', return_value='server.description: ' + json.dumps(description)):
+            g.verify_description(req)
+        with patch.object(g, 'rcon', return_value='server.description: "wrong"'), self.assertRaises(ValueError):
+            g.verify_description(req)
+        for bad in (123, 'bad\rline', 'bad\x00value'):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                g.validate(request(description=bad))
+
+    def test_staging_updates_description_without_removing_current_world(self):
+        with tempfile.TemporaryDirectory() as directory:
+            data = self.fixture(Path(directory))
+            req = request(operation='configure', description='Five mates. Quarter-speed decay.')
+            removed = g.prepare(data, req, dict(identity='test', seed=123, worldsize=1500))
+            self.assertEqual(removed, [])
+            self.assertTrue((data / 'test/proceduralmap.1500.123.999.sav').exists())
+            self.assertIn('server.description "Five mates. Quarter-speed decay."',
+                          (data / 'test/cfg/server.cfg').read_text())
 
     def test_unit_update_is_narrow_and_fails_on_drift(self):
         text = 'Environment=FEX_ROOTFS=/keep\nExecStart=/keep/FEX +server.level "Procedural Map" +server.identity test +server.seed 123 +server.worldsize 1500\n'

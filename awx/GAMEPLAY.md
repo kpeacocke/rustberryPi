@@ -40,7 +40,9 @@ Both jobs default to decay scale **0.25**, upkeep period **5760 minutes**, maxim
 team size **5**, tutorial disabled and **no game administrators**. The existing
 approved player roster, bans, public/restricted mode and public slot settings
 remain intact. RCON stays available for management without player admin rights.
-The gameplay job never changes the seed, size or removes world saves.
+The gameplay job also applies the configured `rust_description` from the repository
+(or a private host override) within the same backed-up transaction and verifies
+it through RCON after startup. It never changes the seed, size or removes world saves.
 It performs an intentional maintenance restart even when the requested settings
 already match. Repeated configuration does not duplicate convars.
 
