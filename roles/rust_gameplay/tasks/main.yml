@@ -1,0 +1,57 @@
+---
+- name: Require an explicit operational launch
+  ansible.builtin.assert:
+    that:
+      - not ansible_check_mode
+      - ansible_play_hosts_all | length == 1
+      - rust_identity is match('^[a-zA-Z0-9_-]+$')
+      - rust_gameplay_operation in ['configure', 'new-world']
+      - rust_admin_players == [] or rust_admin_players == ''
+      - >-
+        rust_gameplay_operation != 'new-world' or
+        rust_new_world_confirm == 'WIPE ' ~ rust_identity ~ ' ' ~ rust_new_world_seed ~ ' ' ~ rust_new_world_size ~ ' KEEP BLUEPRINTS'
+    fail_msg: Use one existing host; new-world requires the exact per-launch confirmation. Check mode cannot simulate this operation.
+
+- name: Install guarded gameplay utilities
+  ansible.builtin.copy:
+    src: '{{ item.source }}'
+    dest: '/usr/local/libexec/pi5-rust/{{ item.target }}'
+    owner: root
+    group: root
+    mode: '0750'
+  loop:
+    - {source: gameplay.py, target: gameplay.py}
+    - {source: '{{ role_path }}/../rust_server/files/access.py', target: access.py}
+    - {source: '{{ role_path }}/../rust_server/files/health.py', target: health.py}
+    - {source: '{{ role_path }}/../rust_server/files/access_runtime.py', target: access_runtime.py}
+    - {source: '{{ role_path }}/../rust_backup/files/backup.py', target: backup.py}
+    - {source: '{{ playbook_dir }}/../maintenance/control.py', target: maintenance.py}
+
+- name: Apply and verify gameplay inside one guarded transaction
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - /usr/local/libexec/pi5-rust/gameplay.py
+      - --mount
+      - '{{ rust_backup_mount }}'
+      - --destination
+      - '{{ rust_backup_destination }}'
+    stdin: >-
+      {{ {'operation': rust_gameplay_operation, 'identity': rust_identity,
+          'decay_scale': rust_decay_scale, 'upkeep': rust_upkeep_period_minutes,
+          'team_size': rust_maxteamsize, 'tutorial': rust_tutorial_enabled,
+          'admins': rust_admin_players, 'warning': rust_gameplay_warning_seconds,
+          'timeout': rust_gameplay_health_timeout, 'seed': rust_new_world_seed,
+          'worldsize': rust_new_world_size, 'confirm': rust_new_world_confirm} | to_json }}
+  async: 14400
+  poll: 10
+  changed_when: true
+  register: rust_gameplay_result
+
+- name: Refresh maintenance boards after the gameplay process releases its lock
+  ansible.builtin.include_role:
+    name: rust_maintenance_refresh
+
+- name: Report verified operation evidence
+  ansible.builtin.debug:
+    msg: '{{ rust_gameplay_result.stdout_lines | last | from_json }}'

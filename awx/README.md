@@ -46,8 +46,11 @@ overrides on the AWX **host**, not in shared group defaults.
 | Readiness check | `playbooks/awx-preflight.yml` | Read-only deployment checks |
 | Converge | `playbooks/rust.yml` | Deploy / configure |
 | Player access | `playbooks/rust.yml` | Access survey from `awx/survey.json` |
+| Gameplay | `playbooks/gameplay.yml` | [Gameplay survey and safeguards](GAMEPLAY.md) |
+| New world | `playbooks/new-world.yml` | [Explicit map-only wipe approval](GAMEPLAY.md) |
 | Telemetry | `playbooks/telemetry.yml` | Dashboard deployment |
 | Security | `playbooks/secure.yml` | Security convergence |
+| Refresh boards | `playbooks/refresh-maintenance.yml` | Refresh and verify maintenance status only |
 | Backup | `playbooks/backup.yml` | Backup only; no automatic player warning |
 | Restore latest | `playbooks/restore-latest.yml` | Explicit restore confirmation survey |
 | OS maintenance | `playbooks/maintenance-os.yml` | OS only |

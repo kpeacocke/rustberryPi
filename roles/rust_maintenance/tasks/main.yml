@@ -290,3 +290,7 @@
       when:
         - item.rc == 0
         - item.stdout == 'active'
+
+- name: Refresh maintenance boards after successful maintenance
+  ansible.builtin.include_role:
+    name: rust_maintenance_refresh

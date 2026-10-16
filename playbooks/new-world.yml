@@ -1,0 +1,9 @@
+---
+- name: Deliberately replace the world while retaining blueprints
+  hosts: rust_servers
+  become: true
+  gather_facts: false
+  vars:
+    rust_gameplay_operation: new-world
+  roles:
+    - rust_gameplay

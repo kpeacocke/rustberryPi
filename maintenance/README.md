@@ -260,3 +260,13 @@ archive checksums and unsafe/missing archive contents. Syntax/lint checks cover 
 entry points. Hardware reboot/reconnect, a live NAS backup and the full maintenance
 window still require validation on the Pi; these jobs have not been run there by
 the repository authoring session.
+
+## Refresh boards after successful maintenance
+
+The workflow now runs `rust-maintenance-check.service` after releasing its
+maintenance window and restoring timers/collector. It waits for fresh successful
+package, Rust and FEX probe evidence before the AWX job finishes. This step sits
+outside the game recovery block: a probe failure does not stop or roll back a
+healthy game. Real outstanding updates remain visible. Retry only
+`playbooks/refresh-maintenance.yml` after fixing the probe, rather than repeating
+the maintenance operation. Gameplay and new-world jobs use the same refresh.

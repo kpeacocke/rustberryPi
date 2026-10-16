@@ -1,0 +1,9 @@
+---
+- name: Configure gameplay on the existing world
+  hosts: rust_servers
+  become: true
+  gather_facts: false
+  vars:
+    rust_gameplay_operation: configure
+  roles:
+    - rust_gameplay

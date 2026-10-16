@@ -1,0 +1,33 @@
+---
+- name: Record start of post-maintenance board refresh
+  ansible.builtin.command: date +%s
+  register: rust_maintenance_refresh_started
+  changed_when: false
+
+- name: Run a fresh maintenance check after releasing the maintenance window
+  ansible.builtin.systemd_service:
+    name: rust-maintenance-check.service
+    state: restarted
+  async: 960
+  poll: 10
+
+- name: Read refreshed board maintenance evidence
+  ansible.builtin.slurp:
+    src: /var/lib/rustberrypi/maintenance.json
+  register: rust_maintenance_refresh_evidence
+
+- name: Verify fresh successful maintenance probes
+  ansible.builtin.assert:
+    that:
+      - (rust_maintenance_refresh_evidence.content | b64decode | from_json).checked_at | float >= rust_maintenance_refresh_started.stdout | int
+      - >-
+        (rust_maintenance_refresh_evidence.content | b64decode | from_json)[item].ok | default(false) | bool
+      - >-
+        (rust_maintenance_refresh_evidence.content | b64decode | from_json)[item].checked_at | default(0) | float
+        >= rust_maintenance_refresh_started.stdout | int
+    fail_msg: >-
+      Game maintenance completed, but the board refresh is stale or a probe failed.
+      Rust has not been rolled back or stopped. Inspect rust-maintenance-check.service;
+      retry the board refresh only, not the wipe or maintenance operation.
+    quiet: true
+  loop: [packages, rust, fex]

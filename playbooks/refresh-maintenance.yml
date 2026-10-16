@@ -1,0 +1,19 @@
+---
+- name: Refresh maintenance boards without repeating game maintenance
+  hosts: rust_servers
+  become: true
+  gather_facts: false
+  pre_tasks:
+    - name: Inspect maintenance window before refreshing boards
+      ansible.builtin.stat:
+        path: /var/lib/rustberrypi-maintenance
+      register: rust_maintenance_refresh_window
+
+    - name: Require completed maintenance before a board-only refresh
+      ansible.builtin.assert:
+        that:
+          - not ansible_check_mode
+          - not rust_maintenance_refresh_window.stat.exists
+        fail_msg: Finish or recover the existing maintenance window first.
+  roles:
+    - rust_maintenance_refresh
