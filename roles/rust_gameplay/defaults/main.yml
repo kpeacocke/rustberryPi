@@ -1,0 +1,12 @@
+---
+rust_gameplay_operation: configure
+rust_decay_scale: 0.25  # noqa: var-naming[no-role-prefix] -- Public gameplay inputs shared with AWX.
+rust_upkeep_period_minutes: 5760  # noqa: var-naming[no-role-prefix] -- Public gameplay inputs shared with AWX.
+rust_maxteamsize: 5  # noqa: var-naming[no-role-prefix] -- Public gameplay inputs shared with AWX.
+rust_tutorial_enabled: false  # noqa: var-naming[no-role-prefix] -- Public gameplay inputs shared with AWX.
+rust_admin_players: []  # noqa: var-naming[no-role-prefix] -- Public gameplay inputs shared with AWX.
+rust_gameplay_warning_seconds: 600
+rust_gameplay_health_timeout: 1800
+rust_new_world_seed: 1433876491  # noqa: var-naming[no-role-prefix] -- Public gameplay inputs shared with AWX.
+rust_new_world_size: 1500  # noqa: var-naming[no-role-prefix] -- Public gameplay inputs shared with AWX.
+rust_new_world_confirm: ''  # noqa: var-naming[no-role-prefix] -- Public gameplay inputs shared with AWX.

@@ -1,0 +1,50 @@
+{
+  "name": "Configure gameplay",
+  "description": "Disables tutorial and removes all game administrators. Preserves access roster. Requires an existing running server, local RCON and mounted NAS.",
+  "spec": [
+    {
+      "question_name": "Decay multiplier",
+      "question_description": "",
+      "required": true,
+      "type": "float",
+      "variable": "rust_decay_scale",
+      "default": 0.25,
+      "min": 0,
+      "max": 10,
+      "new_question": true
+    },
+    {
+      "question_name": "Upkeep period in minutes",
+      "question_description": "",
+      "required": true,
+      "type": "integer",
+      "variable": "rust_upkeep_period_minutes",
+      "default": 5760,
+      "min": 1,
+      "max": 10080,
+      "new_question": true
+    },
+    {
+      "question_name": "Maximum team size",
+      "question_description": "",
+      "required": true,
+      "type": "integer",
+      "variable": "rust_maxteamsize",
+      "default": 5,
+      "min": 1,
+      "max": 5,
+      "new_question": true
+    },
+    {
+      "question_name": "Warning countdown in seconds",
+      "question_description": "",
+      "required": true,
+      "type": "integer",
+      "variable": "rust_gameplay_warning_seconds",
+      "default": 600,
+      "min": 0,
+      "max": 3600,
+      "new_question": true
+    }
+  ]
+}

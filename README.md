@@ -770,3 +770,11 @@ Use `inventory/host_vars/rustberrypi/` and `--limit rustberrypi` afterwards.
 For AWX, rename the host in its inventory and set `rust_system_hostname` there;
 local inventory files are separate from AWX. The hostname playbook does not
 restart Rust or alter the desktop login account, world identity or player state.
+
+## AWX gameplay and map-only wipes
+
+Use the dedicated [gameplay and new-world workflows](awx/GAMEPLAY.md) to manage
+decay, upkeep, team size, tutorial and empty administrator policy without touching
+FEX, kernel or OS settings. New world requires an explicit per-launch confirmation,
+a verified NAS backup and retains blueprints. Never use ordinary convergence as
+a substitute for the guarded wipe workflow.
