@@ -39,10 +39,15 @@ class TrainingExportTests(unittest.TestCase):
                 for index in range(1400):
                     players = index % 6
                     handle.write(json.dumps(sample(1000 + index * 5, player_count=players,
-                                                   entities=1000 + index % 20 * 100,
+                                                   entities=1000 + index,
                                                    cpu_mean=20 + players * 5, fps=60 - players * 2)) + '\n')
             output = root / 'model'
             metadata = train(features, output, 'hailo8')
+            calibration = np.load(output / 'calibration.npy', allow_pickle=False)
+            self.assertEqual(calibration.shape, (64, SIDE, SIDE, len(INPUTS)))
+            bounds = np.asarray(metadata['input_range']) / np.asarray(INPUT_SCALES)[:, None]
+            np.testing.assert_allclose(calibration.min(axis=(0, 1, 2)), bounds[:, 0], rtol=1e-6)
+            np.testing.assert_allclose(calibration.max(axis=(0, 1, 2)), bounds[:, 1], rtol=1e-6)
             evaluator = ReferenceEvaluator(str(output / 'server-health.onnx'))
             values = [2 / INPUT_SCALES[0], 1000 / INPUT_SCALES[1]]
             tensor = np.empty((1, len(INPUTS), SIDE, SIDE), dtype=np.float32)
@@ -57,5 +62,11 @@ class TrainingExportTests(unittest.TestCase):
                 compile_model(output)
             runner.assert_called_once_with(hw_arch='hailo8')
             self.assertEqual(load_manifest(output / 'manifest.json')['architecture'], 'hailo8')
+            calibration[:] = calibration[0]
+            np.save(output / 'calibration.npy', calibration, allow_pickle=False)
+            with patch.dict('sys.modules', {'hailo_sdk_client': MagicMock(ClientRunner=runner)}):
+                with self.assertRaisesRegex(ValueError, 'Calibration does not cover'):
+                    compile_model(output)
+            runner.assert_called_once()
             with self.assertRaises(ValueError):
                 train(features, output, 'hailo8')

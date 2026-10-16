@@ -76,8 +76,13 @@ def train(directory, output, architecture):
     model.ir_version = 8
     onnx.checker.check_model(model)
     onnx.save(model, output / 'server-health.onnx')
-    calibration = np.broadcast_to(x[:min(split, 1024), None, None, :],
-                                 (min(split, 1024), SIDE, SIDE, len(INPUTS))).copy()
+    calibration_indices = np.linspace(0, len(x) - 1, 64, dtype=int)
+    # Include channel extrema within the SDK's 64-sample calibration budget.
+    for channel in range(len(INPUTS)):
+        calibration_indices[2 * channel] = np.argmin(x[:, channel])
+        calibration_indices[2 * channel + 1] = np.argmax(x[:, channel])
+    calibration = np.broadcast_to(x[calibration_indices, None, None, :],
+                                 (64, SIDE, SIDE, len(INPUTS))).copy()
     np.save(output / 'calibration.npy', calibration, allow_pickle=False)
     manifest = {
         'version': 1, 'architecture': architecture, 'side': SIDE,
@@ -108,10 +113,18 @@ def compile_model(directory):
     model = directory / 'server-health.onnx'
     if hashlib.sha256(model.read_bytes()).hexdigest() != manifest['onnx_sha256']:
         raise ValueError('ONNX checksum mismatch; retrain rather than mixing model versions')
+    calibration = np.load(directory / 'calibration.npy', allow_pickle=False)
+    if (calibration.shape != (64, SIDE, SIDE, len(INPUTS))
+            or not np.isfinite(calibration).all()):
+        raise ValueError('Expected 64 finite NHWC calibration samples; regenerate the model bundle')
+    bounds = np.asarray(manifest['input_range']) / np.asarray(INPUT_SCALES)[:, None]
+    if (not np.allclose(calibration.min(axis=(0, 1, 2)), bounds[:, 0], rtol=1e-6, atol=1e-8)
+            or not np.allclose(calibration.max(axis=(0, 1, 2)), bounds[:, 1], rtol=1e-6, atol=1e-8)):
+        raise ValueError('Calibration does not cover the model input range; regenerate the model bundle')
     runner = ClientRunner(hw_arch=manifest['architecture'])
     runner.translate_onnx_model(str(model), 'server_health',
                                 net_input_shapes={'telemetry': [1, len(INPUTS), SIDE, SIDE]})
-    runner.optimize(np.load(directory / 'calibration.npy', allow_pickle=False))
+    runner.optimize(calibration)
     hef = runner.compile()
     (directory / 'server-health.hef').write_bytes(hef)
     manifest['hef_sha256'] = hashlib.sha256(hef).hexdigest()

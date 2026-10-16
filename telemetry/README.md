@@ -291,6 +291,12 @@ python -m venv .venv-health
 
 Substitute `hailo8l` if appropriate. The output directory must be empty.
 Outputs are `server-health.onnx`, NHWC `calibration.npy` and `manifest.json`.
+Calibration contains 64 observed workloads distributed across the retained
+archive, including each input's minimum and maximum. This includes unlabeled
+validation inputs to cover the declared runtime domain; validation RMSE measures
+the floating-point fit, not independent post-quantization accuracy.
+Compilation rejects older calibration bundles that do not cover that domain.
+Regenerate those bundles in a new output directory before compiling.
 Inspect `validation_rmse` versus `median_baseline_rmse`: lower is better.
 Constant metrics or poor coverage can give little useful learned signal.
 The CPU reference and runtime only accept workloads inside the observed input
@@ -310,6 +316,10 @@ Compilation must actually succeed. This creates `server-health.hef` and binds it
 SHA256 into the manifest. Keep ONNX, calibration, compiler/runtime versions and
 validation results together as a private versioned artifact. Retrain/compile
 into a new directory rather than overwriting the deployed model.
+Before enablement, verify real HAT/CPU-reference parity across the supported
+input range, including minima, maxima, intermediate and live workloads.
+A passing single sample is not sufficient; do not loosen the 0.05 parity guard
+to accept a poorly calibrated model.
 
 #### 4. Deploy and prove real inference
 
