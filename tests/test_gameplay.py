@@ -64,6 +64,10 @@ class GameplayTests(unittest.TestCase):
         self.assertEqual(g.clear_admins('Global.OwnerID 123\nMODERATORID 456\nbanid 789\n',
                                        {'mode': 'public', 'players': [], 'admins': []}), 'banid 789\n')
 
+    def test_indirect_admin_grants_fail_closed_in_public_mode(self):
+        with self.assertRaises(ValueError):
+            g.clear_admins('exec admins.cfg\n', {'mode': 'public', 'players': [], 'admins': []})
+
     def test_runtime_values_fail_closed(self):
         for response, expected in [('decay.scale: "0.25"', .25), ('decay.scale: 1', 1)]:
             with patch.object(g, 'rcon', return_value=response):

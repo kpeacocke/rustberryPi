@@ -106,6 +106,13 @@ def world_files(identity):
 
 
 def clear_admins(text, desired):
+    # Refuse indirect grants (for example exec) even in public mode.
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped and not stripped.startswith('//'):
+            command = stripped.split()[0].lower().removeprefix('global.')
+            if command not in ('ownerid', 'moderatorid', 'banid', 'skipqueueid'):
+                raise ValueError('Unknown users.cfg command requires review')
     # Rust command spelling is case-insensitive; normalise only admin commands.
     text = re.sub(r'(?im)^(\s*)(?:global\.)?(ownerid|moderatorid)(?=\s)',
                   lambda m: m[1] + m[2].lower(), text)
