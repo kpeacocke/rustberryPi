@@ -14,6 +14,7 @@ After merging and synchronising the project, create two templates:
 | --- | --- | --- |
 | RustberryPi - Gameplay | `playbooks/gameplay.yml` | `awx/gameplay-survey.json` |
 | RustberryPi - New world | `playbooks/new-world.yml` | `awx/new-world-survey.json` |
+| RustberryPi - Refresh boards | `playbooks/refresh-maintenance.yml` | None |
 
 Use the existing project, inventory, Machine credential and tested execution
 environment. Enable become; disable concurrent jobs and slicing; limit to exactly
@@ -57,6 +58,38 @@ The gameplay playbook owns these gameplay settings in server.cfg. Ordinary
 `rust.yml` preserves those lines but does not apply changes to these four new
 variables; run Gameplay when changing them. Existing access surveys must not
 reintroduce administrator IDs. Survey answers override inventory for that launch.
+
+## Launch sequence for a new world with these settings
+
+1. Merge the reviewed PR, then synchronise the RustberryPi AWX project on `main`.
+   Do not launch any existing deployment job just to make new playbooks appear.
+2. Preserve the private host identity, approved player IDs, storage UUID, NAS and
+   credential configuration. Set the gameplay host variables shown above. Keep
+   the **current** `rust_seed` and `rust_worldsize` until the wipe succeeds.
+3. Add the three Job Templates listed above using the existing project, inventory,
+   Machine credential and execution environment. Enable privilege escalation;
+   use Run type, one Pi limit, one slice, no simultaneous jobs and a 14400-second
+   timeout. For Gameplay and New world, set `rust_admin_players: []` and
+   `rust_tutorial_enabled: false` in template variables. Do not store a wipe
+   confirmation there.
+4. In each game template's Survey tab, add/enable the questions from its JSON
+   file. The JSON is an API/import specification, not YAML for the Variables box.
+   The UI equivalent is one question per `spec` entry, matching its answer
+   variable, type, default and bounds. New world's confirmation is required text
+   with no default. Refresh boards has no survey.
+5. Run the existing Readiness check. Resolve failures before continuing. Ensure
+   no maintenance/deployment/restore job is running and the game is healthy.
+6. Launch **New world once**. It also applies all the gameplay settings, so do not
+   launch Gameplay separately for this initial wipe. Choose decay 0.25, upkeep
+   5760, team size 5, warning 600 seconds, size 1500 and the reviewed seed. Type
+   the identity-specific confirmation below. Preview the answers and launch.
+7. Wait for the game verification and board-refresh tasks to succeed. If only
+   board refresh fails, use Refresh boards, never New world. Other failures follow
+   the guarded recovery procedure below.
+8. Update private host `rust_seed`/`rust_worldsize` to the successfully deployed
+   values before any later normal convergence. Join using the existing address;
+   confirm the new world, retained blueprints and access for the approved players.
+   Use Gameplay for future setting changes without a wipe.
 
 ## New world approval
 
@@ -113,6 +146,24 @@ Blueprint hashes prove unchanged staging, not database compatibility with a
 future Rust update or Facepunch forced blueprint wipe. This workflow does not
 update the game. Test blueprint availability with a player after the first
 approved launch. Free-space checks are conservative estimates, not quotas.
+
+## Immediate board refresh
+
+After the gameplay process has exited and released its lock, AWX explicitly runs
+`rust-maintenance-check.service` and waits for completion. Ordinary maintenance
+uses the same final step, outside its rollback/failure block. The service is
+restarted to ensure a fresh check even if its timer fired during cleanup. This
+refreshes package, Rust and FEX availability; it does not install updates or
+artificially clear real outstanding updates/warnings. Boards consume the refreshed
+status on their next normal poll.
+
+AWX verifies fresh successful timestamps for all three probes, not just the
+service exit code. If this last step fails, the game remains in its successfully
+verified state. **Do not rerun New world to repair a board refresh.** Run the
+Refresh boards template (`playbooks/refresh-maintenance.yml`) after resolving the
+reported connectivity/probe issue. This playbook refuses an open maintenance
+window. It is also the AWX equivalent of manually starting the maintenance-check
+service, with evidence verification added.
 
 ## Failure and interrupted-job recovery
 

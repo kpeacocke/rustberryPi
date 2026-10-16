@@ -50,6 +50,7 @@ overrides on the AWX **host**, not in shared group defaults.
 | New world | `playbooks/new-world.yml` | [Explicit map-only wipe approval](GAMEPLAY.md) |
 | Telemetry | `playbooks/telemetry.yml` | Dashboard deployment |
 | Security | `playbooks/secure.yml` | Security convergence |
+| Refresh boards | `playbooks/refresh-maintenance.yml` | Refresh and verify maintenance status only |
 | Backup | `playbooks/backup.yml` | Backup only; no automatic player warning |
 | Restore latest | `playbooks/restore-latest.yml` | Explicit restore confirmation survey |
 | OS maintenance | `playbooks/maintenance-os.yml` | OS only |

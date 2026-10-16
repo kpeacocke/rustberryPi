@@ -48,6 +48,10 @@
   changed_when: true
   register: rust_gameplay_result
 
+- name: Refresh maintenance boards after the gameplay process releases its lock
+  ansible.builtin.include_role:
+    name: rust_maintenance_refresh
+
 - name: Report verified operation evidence
   ansible.builtin.debug:
     msg: '{{ rust_gameplay_result.stdout | from_json }}'
