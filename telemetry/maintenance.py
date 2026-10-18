@@ -43,13 +43,20 @@ def check_rust(config):
         return {'installed': current, 'available': public_build(reply)}
 
 
+def check_fex_installed(config):
+    executable = str(Path(config['fex']).with_name('FEXGetConfig'))
+    version = subprocess.check_output([executable, '--version'], text=True, timeout=15).strip()
+    if not version or len(version) > 100 or any(character.isspace() for character in version):
+        raise ValueError('Invalid installed FEX version')
+    return {'version': version}
+
+
 def check_fex(config):
     req = urllib.request.Request('https://api.github.com/repos/FEX-Emu/FEX/releases/latest',
                                  headers={'User-Agent': 'rustberryPi-maintenance'})
     with urllib.request.urlopen(req, timeout=15) as response:
         release = json.load(response)
-    return {'installed_pin': config['fex_version'], 'latest_release': release['tag_name'],
-            'published_at': release['published_at']}
+    return {'latest_release': release['tag_name'], 'published_at': release['published_at']}
 
 
 def main():
@@ -60,7 +67,8 @@ def main():
     except (OSError, ValueError):
         result = {}
     # Keep earlier successful values but mark failed probes as failed/stale.
-    for name, fn in [('packages', check_packages), ('rust', lambda: check_rust(config)),
+    for name, fn in [('fex_installed', lambda: check_fex_installed(config)),
+                     ('packages', check_packages), ('rust', lambda: check_rust(config)),
                      ('fex', lambda: check_fex(config))]:
         now = time.time()
         try:
@@ -68,6 +76,9 @@ def main():
         except Exception as error:
             print(name + ' check failed: ' + type(error).__name__, flush=True)
             result.setdefault(name, {}).update(ok=False, attempted_at=now, error='Check failed; inspect probe environment/connectivity')
+    # Keep already-open dashboards compatible without presenting the configured pin as installed.
+    result['fex']['installed_pin'] = (
+        result['fex_installed']['version'] if result['fex_installed']['ok'] else None)
     result['reboot_required'] = Path('/run/reboot-required').exists()
     try:
         result['backup'] = json.loads(Path('/var/lib/rustberrypi-backup.json').read_text())

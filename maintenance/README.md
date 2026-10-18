@@ -42,6 +42,15 @@ playbooks to implement “all”: that would cause three countdowns and restarts
    timers. The counter is cleared only after both health checks pass; failed
    maintenance retains it. This does not restart Rust or erase its journal. A
    subsequent automatic restart raises the dashboard notice again.
+9. After releasing the maintenance window, run the dashboard maintenance checks
+   immediately rather than waiting for the scheduled timer. Verify fresh package,
+   Rust, upstream FEX and installed FEX results. A probe failure fails the job
+   explicitly but does not stop the recovered game or reapply the offline guard.
+
+The installed FEX version is queried from `FEXGetConfig` beside the selected
+runtime, not inferred from a configured version label. This local check is
+independent of the upstream release API, so connectivity failures do not hide
+the installed version. Refreshing telemetry alone does not rerun update checks.
 
 After both readiness checks pass, the workflow records the verified target and
 Pi completion timestamp for advisory performance comparison. The collector waits

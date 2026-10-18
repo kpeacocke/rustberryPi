@@ -56,7 +56,7 @@ class MaintenanceRefreshTests(unittest.TestCase):
             }]))
             for failure in (None, 'failed', 'stale', 'old_summary'):
                 evidence = {'checked_at': 101, **{name: {'ok': True, 'checked_at': 101}
-                            for name in ('packages', 'rust', 'fex')}}
+                            for name in ('packages', 'rust', 'fex', 'fex_installed')}}
                 if failure == 'failed':
                     evidence['rust']['ok'] = False
                 elif failure == 'stale':
@@ -76,12 +76,13 @@ class MaintenanceRefreshTests(unittest.TestCase):
 
     def test_refresh_waits_and_verifies_each_probe_not_just_service_exit(self):
         tasks = self.tasks('rust_maintenance_refresh')
-        self.assertEqual(tasks[1]['ansible.builtin.systemd_service'],
+        run = next(task for task in tasks if 'ansible.builtin.systemd_service' in task)
+        self.assertEqual(run['ansible.builtin.systemd_service'],
                          {'name': 'rust-maintenance-check.service', 'state': 'restarted'})
-        self.assertGreater(tasks[1]['async'], 900)
-        self.assertGreater(tasks[1]['poll'], 0)
+        self.assertGreater(run['async'], 900)
+        self.assertGreater(run['poll'], 0)
         verify = tasks[-1]
-        self.assertEqual(verify['loop'], ['packages', 'rust', 'fex'])
+        self.assertEqual(verify['loop'], ['packages', 'rust', 'fex', 'fex_installed'])
         conditions = ' '.join(verify['ansible.builtin.assert']['that'])
         self.assertIn('.ok', conditions)
         self.assertIn('.checked_at', conditions)

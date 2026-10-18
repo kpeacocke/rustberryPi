@@ -237,7 +237,8 @@
     - name: Report verified completion
       ansible.builtin.debug:
         msg: >-
-          Maintenance {{ rust_maintenance_target }} complete; game query and authenticated RCON are healthy.
+          Maintenance {{ rust_maintenance_target }} recovered; game query and authenticated RCON are healthy.
+          Dashboard evidence refresh follows after releasing the maintenance window.
           Backup {{ rust_maintenance_backup.stdout | trim }}.
 
     - name: Release completed maintenance window
@@ -294,3 +295,9 @@
 - name: Refresh maintenance boards after successful maintenance
   ansible.builtin.include_role:
     name: rust_maintenance_refresh
+
+- name: Report maintenance and dashboard refresh completion
+  ansible.builtin.debug:
+    msg: >-
+      Maintenance {{ rust_maintenance_target }} complete; telemetry was restarted,
+      game recovery verified and dashboard update checks refreshed.

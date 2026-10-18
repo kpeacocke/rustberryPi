@@ -42,6 +42,13 @@ class MaintenanceTests(unittest.TestCase):
             if task['name'] == 'Record verified maintenance for performance comparison'
         )
         self.assertLess(fresh_check_index, record_index)
+        refresh_index = next(index for index, task in enumerate(tasks)
+                             if task.get('ansible.builtin.include_role', {}).get('name') == 'rust_maintenance_refresh')
+        self.assertGreater(refresh_index, tasks.index(workflow))
+        refresh = yaml.safe_load((ROOT / 'roles/rust_maintenance_refresh/tasks/main.yml').read_text())
+        self.assertIn('fex_installed', refresh[-1]['loop'])
+        install = next(task for task in refresh if task['name'] == 'Install current dashboard maintenance probes')
+        self.assertEqual(install['ansible.builtin.copy']['dest'], '/opt/rustberrypi/telemetry/maintenance.py')
 
     def test_fex_activation_preserves_service_world_and_previous_unit(self):
         with tempfile.TemporaryDirectory() as folder:

@@ -1,4 +1,12 @@
 ---
+- name: Install current dashboard maintenance probes
+  ansible.builtin.copy:
+    src: '{{ playbook_dir }}/../telemetry/maintenance.py'
+    dest: /opt/rustberrypi/telemetry/maintenance.py
+    owner: root
+    group: root
+    mode: '0644'
+
 - name: Record start of post-maintenance board refresh
   ansible.builtin.command: date +%s
   register: rust_maintenance_refresh_started
@@ -30,4 +38,4 @@
       Rust has not been rolled back or stopped. Inspect rust-maintenance-check.service;
       retry the board refresh only, not the wipe or maintenance operation.
     quiet: true
-  loop: [packages, rust, fex]
+  loop: [packages, rust, fex, fex_installed]
