@@ -40,6 +40,34 @@ class FakeRcon:
 
 
 class AccessRuntimeTests(unittest.TestCase):
+    def test_six_saved_players_are_all_restored_without_admin_commands(self):
+        players = [str(int(PLAYER) + index) for index in range(6)]
+        client = FakeRcon('')
+        client.recv = lambda: json.dumps({
+            'Identifier': client.command['Identifier'],
+            'Message': 'User ' + client.command['Message'].split()[1] + ' will already skip the queue',
+        })
+        with tempfile.TemporaryDirectory() as directory:
+            state = Path(directory) / 'access.json'
+            secret = Path(directory) / 'rcon-password'
+            state.write_text(json.dumps({'mode': 'restricted', 'players': players}))
+            secret.write_text('a' * 64)
+            paths = {'/srv/rust/data/access.json': state,
+                     '/etc/rustberrypi/rcon-password': secret}
+            with patch.object(runtime, 'Path', side_effect=paths.__getitem__), \
+                    patch.object(runtime, 'query', return_value=True), \
+                    patch.object(runtime.websocket, 'create_connection', return_value=client), \
+                    patch.object(client, 'send', wraps=client.send) as send:
+                runtime.apply_access(verify_only=True)
+                commands = [json.loads(call.args[0])['Message'] for call in send.call_args_list]
+                self.assertEqual(len(commands), 6)
+                self.assertEqual([command.split()[1] for command in commands], players)
+                self.assertTrue(all(command.startswith('global.skipqueueid ') for command in commands))
+            state.write_text(json.dumps({'mode': 'restricted', 'players': players + [str(int(PLAYER) + 6)]}))
+            with patch.object(runtime, 'Path', side_effect=paths.__getitem__):
+                with self.assertRaisesRegex(ValueError, 'Invalid approved player policy'):
+                    runtime.apply_access()
+
     def test_applies_saved_policy_and_detects_missing_grants(self):
         with tempfile.TemporaryDirectory() as directory:
             state = Path(directory) / 'access.json'

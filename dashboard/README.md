@@ -77,7 +77,12 @@ unavailable data and unmatched workloads are not displayed as successful health
 checks. Existing threshold suggestions remain separate. On the 1920x1080 System
 display, detailed analysis and long check lists scroll within their panels; the
 analysis panel is keyboard-focusable. The compact Overview summary preserves the
-1280x720 five-player kiosk layout.
+1280x720 kiosk layout with up to six approved players. Overview keeps the roster
+in one compact row at that resolution; names truncate rather than widening the
+page. Players & game keeps all six connected-player rows and uses two columns
+for last-login history. Health & maintenance remains unchanged. Six-player
+access support is not a performance certification for six concurrent players;
+measure FPS and memory pressure on the Pi.
 
 Neither analyzer can change the server or trigger a restart. The HAT uses numeric
 server telemetry, not the camera. It is disabled until a real chip-specific model

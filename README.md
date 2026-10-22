@@ -1,7 +1,8 @@
 # rustberryPi — Raspberry Pi 5 Rust server
 
 Ansible for one specific experiment: a Raspberry Pi 5, 16 GB RAM, Debian 13
-Trixie arm64, 4 KB Raspberry Pi kernel, FEX and a vanilla five-player Rust server.
+Trixie arm64, 4 KB Raspberry Pi kernel, FEX and a small vanilla Rust server
+(five public slots by default; up to six approved players in restricted mode).
 The OS lives on microSD; the ext4 USB labelled `RUSTSERVER` holds `/srv/rust`.
 No plugins, containers, game-server framework or scheduled game updates.
 
@@ -616,7 +617,7 @@ licenses and terms; no license to redistribute their binaries is granted here.
 `rust_access_mode` accepts `public`, `restricted`, or `preserve` (the default).
 Public means any authenticated Steam player; Steam authentication is never disabled.
 Restricted requires `rust_allowed_players`, a YAML list or comma/newline-separated
-text containing one to five SteamID64 values or numeric Steam profile URLs. Vanity
+text containing one to six SteamID64 values or numeric Steam profile URLs. Vanity
 links must first be resolved to numeric IDs. Store actual IDs in ignored host vars
 or AWX inventory/survey answers, never in the public project.
 
@@ -657,7 +658,7 @@ local RCON after each Rust start, then applies and verifies the saved approved l
 from `/srv/rust/data/access.json`. The Converge validation also fails if any
 permission is missing after that service completes. Restricted access requires
 `rust_telemetry_enabled: true` for this reason. The approved
-list is limited to five, replacing the ordinary public-slot limit. Join permission alone grants no admin rights. When administrator management is
+list is limited to six, replacing the ordinary public-slot limit. Join permission alone grants no admin rights. When administrator management is
 left at `preserve`, existing owners/moderators outside the approved list cause a
 failure for explicit review because admins bypass the queue. Bans are preserved.
 Unknown users.cfg commands and conflicting server.cfg capacity settings also fail
@@ -682,6 +683,20 @@ exposure. The native method is documented at:
 https://wiki.facepunch.com/rust/Creating_a_hidden_whitelisted_server
 
 ### Game administrator question
+
+To add a friend, append their SteamID64 to the complete `rust_allowed_players`
+list in private AWX host variables, keeping `rust_access_mode: restricted`.
+Up to six approved players can join concurrently; `rust_maxplayers` is the
+public-mode limit, not the restricted roster capacity. Do not add the friend to
+`rust_admin_players` unless they should receive full owner rights.
+After publishing code changes, sync the AWX project and run Converge
+(`playbooks/rust.yml`). If its access survey is enabled, supply the complete
+updated roster there too: survey answers override host variables. Preserve the
+existing administrators, world settings and FEX pins. Access changes gracefully
+restart Rust; they do not require a new world. Run Telemetry if using a separate
+monitoring deployment, and refresh the three browsers to load updated assets.
+AWX stores its own survey copy; update its five-player help text from
+`awx/survey.json` when deploying six-player support.
 
 The CLI wrapper and AWX survey also ask who may administer Rust. Set
 `rust_admin_players` to numeric SteamID64 values (YAML list or comma/newline text).

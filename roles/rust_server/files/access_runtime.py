@@ -18,7 +18,7 @@ def apply_access(verify_only=False, timeout=900):
     if state['mode'] != 'restricted':
         return
     players = parse_ids(state['players'])
-    if not 1 <= len(players) <= 5:
+    if not 1 <= len(players) <= 6:
         raise ValueError('Invalid approved player policy')
     password = Path('/etc/rustberrypi/rcon-password').read_text().strip()
     if not re.fullmatch(r'[a-f0-9]{64}', password):

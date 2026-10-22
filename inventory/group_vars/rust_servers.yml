@@ -9,7 +9,7 @@ rust_url: "https://discord.gg/UV6D43jQY"
 # Optional: set rust_saveinterval in private host vars to manage server.cfg.
 rust_worldsize: 1500
 rust_seed: 12345
-rust_maxplayers: 5  # Public slots (1–5); restricted capacity is the approved roster size.
+rust_maxplayers: 5  # Public slots (1–6); restricted capacity is the approved roster size.
 rust_uid: 2001
 # Optional rust_gid: adopt existing account/disk GID, otherwise use rust_uid.
 rust_storage_label: RUSTSERVER

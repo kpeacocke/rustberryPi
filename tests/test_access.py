@@ -15,19 +15,19 @@ B = '76561198000000002'
 
 
 class AccessTests(unittest.TestCase):
-    def test_five_approved_players_supported_without_granting_admin(self):
-        players = ['7656119800000000' + str(i) for i in range(1, 6)]
+    def test_six_approved_players_supported_without_granting_admin(self):
+        players = ['7656119800000000' + str(i) for i in range(1, 7)]
         desired = access.policy({'mode': 'restricted', 'players': players, 'admins': [A]}, None)
-        self.assertEqual(len(desired['players']), 5)
+        self.assertEqual(len(desired['players']), 6)
         self.assertEqual(desired['admins'], [A])
         rendered = access.reconcile('', desired)
         config = access.reconcile_config('server.description "Hi"\n', desired)
-        self.assertEqual(config.count('global.skipqueueid '), 5)
+        self.assertEqual(config.count('global.skipqueueid '), 6)
         self.assertEqual(access.reconcile_config(config, desired), config)
         self.assertEqual(rendered.count('ownerid '), 1)
         self.assertEqual(access.reconcile(rendered, desired), rendered)
         with self.assertRaises(ValueError):
-            access.policy({'mode': 'restricted', 'players': players + ['76561198000000006']}, None)
+            access.policy({'mode': 'restricted', 'players': players + ['76561198000000007']}, None)
 
     def test_admin_must_be_approved(self):
         with self.assertRaises(ValueError):
@@ -63,7 +63,7 @@ class AccessTests(unittest.TestCase):
 
     def test_limit_and_invalid_mode(self):
         with self.assertRaises(ValueError):
-            access.policy({'mode': 'restricted', 'players': [str(int(A) + i) for i in range(6)]}, None)
+            access.policy({'mode': 'restricted', 'players': [str(int(A) + i) for i in range(7)]}, None)
         with self.assertRaises(ValueError):
             access.policy({'mode': 'anon'}, None)
 
@@ -131,7 +131,7 @@ class AccessTests(unittest.TestCase):
                 self.assertEqual(sum(command[1] == 'stop' for command in calls), 1)
                 self.assertIn(A, (root / 'world/cfg/server.cfg').read_text())
                 self.assertFalse((root / 'world/cfg/users.cfg').exists())
-                for slots in (5, 4):
+                for slots in (6, 5, 4):
                     output = io.StringIO()
                     with patch('sys.stdin', io.StringIO(json.dumps({'mode': 'public', 'maxplayers': slots}))), \
                             patch('sys.stdout', output):

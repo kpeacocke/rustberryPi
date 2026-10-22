@@ -4,7 +4,7 @@
     that:
       - rust_identity is match('^[a-zA-Z0-9_-]+$')
       - rust_maxplayers | int >= 1
-      - rust_maxplayers | int <= 5
+      - rust_maxplayers | int <= 6
       - rust_worldsize | int >= 1000
       - rust_worldsize | int <= 2000
       - rust_seed | int >= 0

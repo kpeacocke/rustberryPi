@@ -37,8 +37,8 @@ def policy(request, previous):
     if mode not in ('public', 'restricted'):
         raise ValueError('Choose public or restricted access')
     players = parse_ids(request.get('players', []))
-    if mode == 'restricted' and not 1 <= len(players) <= 5:
-        raise ValueError('Restricted mode requires one to five distinct players')
+    if mode == 'restricted' and not 1 <= len(players) <= 6:
+        raise ValueError('Restricted mode requires one to six distinct players')
     result = {'mode': mode, 'players': players if mode == 'restricted' else []}
     if admin_input == 'preserve':
         if previous and 'admins' in previous:
@@ -133,8 +133,8 @@ def main():
         raise ValueError('Invalid identity')
     request = json.load(sys.stdin)
     public_capacity = int(request.get('maxplayers', 5))
-    if not 1 <= public_capacity <= 5:
-        raise ValueError('Public capacity must be between one and five')
+    if not 1 <= public_capacity <= 6:
+        raise ValueError('Public capacity must be between one and six')
     root = Path('/srv/rust/data')
     cfg = root / identity / 'cfg'
     state = root / 'access.json'
