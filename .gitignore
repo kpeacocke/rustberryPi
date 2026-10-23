@@ -30,3 +30,7 @@ health-model/
 *.har
 *.onnx
 *.npy
+rust-health-kit*.zip
+candidate.zip
+tools/health_bundle/output/
+tools/health_bundle/features/

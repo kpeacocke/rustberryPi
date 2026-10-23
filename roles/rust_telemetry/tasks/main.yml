@@ -82,6 +82,24 @@
     group: root
     mode: '0644'
 
+- name: Create portable training tool directory
+  ansible.builtin.file:
+    path: /opt/rustberrypi/tools
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Install portable health training tools
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../tools/{{ item }}"
+    dest: /opt/rustberrypi/tools/
+    owner: root
+    group: root
+    mode: '0644'
+    directory_mode: '0755'
+  loop: [export_health_bundle.py, train_server_health.py, health_bundle]
+
 - name: Configure optional desktop startup
   ansible.builtin.include_tasks: desktop.yml
   when: rust_telemetry_desktop_user | length > 0 or rust_telemetry_desktop_autostart | bool or rust_telemetry_screen_blank | bool

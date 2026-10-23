@@ -291,6 +291,67 @@ python -m venv .venv-health
 
 Substitute `hailo8l` if appropriate. The output directory must be empty.
 Outputs are `server-health.onnx`, NHWC `calibration.npy` and `manifest.json`.
+
+##### Portable training kit
+
+This is the self-contained alternative to the workstation training and SDK compilation
+steps: it runs both inside Docker, with no checkout required on the build PC.
+After publishing these repository changes, sync the AWX project and run **Telemetry**
+(or run `playbooks/telemetry.yml` directly) to install the exporter.
+Use an AVX-capable x86-64 Linux host or WSL; native Windows, ARM hosts and the
+NAS without AVX are not supported.
+
+Run on the Pi (use a new output filename each time):
+
+```bash
+sudo -u rust-telemetry /usr/bin/python3 /opt/rustberrypi/tools/export_health_bundle.py \
+  --output /tmp/rust-health-kit.zip
+sudo install -o "$(id -un)" -g "$(id -gn)" -m 0600 \
+  /tmp/rust-health-kit.zip "$HOME/rust-health-kit.zip"
+sudo rm /tmp/rust-health-kit.zip
+```
+
+Copy `~/rust-health-kit.zip` from the Pi using your normal SSH/file-transfer
+method. Extract into the PC's WSL Linux home directory, not `/mnt/c`, and change
+into the extracted directory:
+
+```bash
+python3 build.py --check-only
+python3 build.py
+```
+
+The default image is
+the previously used `hailo-dfc:3.34.0-fixed`. If missing, supply
+the licensed wheel to build an Ubuntu 22.04/Python 3.10 virtual-environment image:
+
+```bash
+python3 build.py --wheel /path/to/hailo_dataflow_compiler-3.34.0-py3-none-linux_x86_64.whl
+```
+
+The licensed wheel
+is not bundled or downloaded automatically. Host Python needs no third-party
+packages. Docker must be running; image creation needs internet access.
+See the bundled `README.txt` for environment and privacy details.
+
+The ZIP contains sanitized numeric feature snapshots, source, checksums,
+environment/build scripts and instructions, never player identities or RCON
+credentials. Keep it private. Collection is read-only, does not stop telemetry
+or Rust, and skips an incomplete final JSONL row. No service restart is needed.
+The same exporter works from this repository with `--features /path/to/features`.
+
+Each successful build writes a timestamped `output/` directory containing logs,
+ONNX/calibration artifacts and `candidate.zip` with HEF plus matching manifest.
+It never deploys or replaces a model. This automates the existing model, including
+its latest-20,000-eligible-row selection; inspect workload coverage and holdout
+errors before using a candidate, and test real HAT parity on the Pi. Build success
+alone does not certify populated-server accuracy.
+After validation, extract `candidate.zip` into a private controller model directory
+and follow [Deploy and prove real inference](#4-deploy-and-prove-real-inference)
+below. Keep its HEF and manifest together. No deployment or service restart is
+performed by the kit, and it does not prune old ZIPs or build outputs.
+
+##### Model coverage and calibration
+
 Calibration contains 64 observed workloads distributed across the retained
 archive, including each input's minimum and maximum. This includes unlabeled
 validation inputs to cover the declared runtime domain; validation RMSE measures

@@ -755,6 +755,12 @@ predictor with CPU-reference parity checks. It requires real training data,
 Hailo's compiler and a chip-specific compiled model; no pretrained or
 hardware-certified model is bundled. See [server analysis and HAT commissioning](telemetry/README.md#server-early-warning-and-hailo).
 
+For manual model training, use the [portable training kit](telemetry/README.md#portable-training-kit).
+The Pi exports a private ZIP of numeric telemetry, training code and environment/build
+scripts. Run it on an AVX-capable x86-64 Linux PC or WSL with Docker; no scheduled
+worker or cloud service is required. Builds produce a candidate model for manual
+validation and deployment, not an automatic replacement for the live model.
+
 Chromium runs with its own password store, so an auto-login desktop never blocks
 on a keyring unlock dialog before the dashboards open. Optional
 `rust_telemetry_screen_blank` switches the displays off after
