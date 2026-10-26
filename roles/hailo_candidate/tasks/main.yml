@@ -1,0 +1,78 @@
+---
+- name: Require approved local Hailo firmware use
+  ansible.builtin.assert:
+    that:
+      - hailo_candidate_firmware_eula_accepted | bool
+      - ansible_facts['architecture'] == 'aarch64'
+      - ansible_facts['distribution'] == 'Debian'
+      - ansible_facts['distribution_major_version'] == '13'
+    fail_msg: >-
+      Candidate builds require Debian 13 arm64 and the private host variable
+      rust_maintenance_hailo_firmware_eula_accepted=true, set only after
+      accepting Hailo's
+      firmware terms. Firmware remains local to the Pi.
+
+- name: Read exact running kernel for candidate build
+  ansible.builtin.command: uname -r
+  register: hailo_candidate_kernel
+  changed_when: false
+
+- name: Check exact running-kernel headers
+  ansible.builtin.stat:
+    path: '/lib/modules/{{ hailo_candidate_kernel.stdout | trim }}/build/Makefile'
+  register: hailo_candidate_headers
+
+- name: Install only exact running-kernel headers when missing
+  when: not hailo_candidate_headers.stat.exists
+  block:
+    - name: Require the exact running-kernel header package
+      ansible.builtin.command:
+        argv: [apt-cache, show, 'linux-headers-{{ hailo_candidate_kernel.stdout | trim }}']
+      register: hailo_candidate_header_package
+      changed_when: false
+      failed_when: >-
+        hailo_candidate_header_package.rc != 0 or
+        hailo_candidate_header_package.stdout | trim | length == 0
+
+    - name: Install exact kernel headers without upgrades or removals
+      ansible.builtin.apt:
+        name: 'linux-headers-{{ hailo_candidate_kernel.stdout | trim }}'
+        state: present
+        install_recommends: false
+        fail_on_autoremove: true
+
+- name: Install isolated Hailo source build dependencies
+  ansible.builtin.apt:
+    name: '{{ hailo_candidate_build_packages }}'
+    state: present
+    install_recommends: false
+    fail_on_autoremove: true
+
+- name: Install candidate builder on the Pi
+  ansible.builtin.copy:
+    src: '{{ playbook_dir }}/../tools/hailo_candidate.py'
+    dest: /usr/local/libexec/rustberrypi-hailo-candidate.py
+    owner: root
+    group: root
+    mode: '0750'
+
+- name: Check for and build the newest common stable Hailo-8 candidate
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/nice
+      - -n
+      - '15'
+      - /usr/bin/ionice
+      - -c
+      - '3'
+      - /usr/bin/python3
+      - /usr/local/libexec/rustberrypi-hailo-candidate.py
+      - --firmware-eula-accepted
+  register: hailo_candidate_build
+  async: 21600
+  poll: 30
+  changed_when: "'Built private Hailo' in hailo_candidate_build.stdout"
+
+- name: Report candidate-only result
+  ansible.builtin.debug:
+    msg: '{{ hailo_candidate_build.stdout | trim }}'

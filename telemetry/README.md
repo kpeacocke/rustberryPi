@@ -213,6 +213,13 @@ the current kernel, the role runs `dkms autoinstall` and verifies the module.
 It loads `hailo_pci` if needed, persists activation, waits for the device and
 checks Python imports plus `hailortcli fw-control identify`.
 
+The initial APT-managed stack remains the default. After the separate
+Hailo-candidate maintenance action activates a source-built 4.x stack, subsequent
+deployments use its versioned Python environment and CLI instead of replacing
+those components with the older APT candidate. Candidate discovery/building is
+documented in [maintenance](../maintenance/README.md#hailo-source-candidates);
+it never installs automatically.
+
 The role never requests a distribution upgrade, different kernel image or reboot.
 APT is configured to refuse removals and avoid recommended package expansion.
 If exact headers are no longer available from your repositories, the play fails:

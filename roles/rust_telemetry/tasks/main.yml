@@ -26,6 +26,33 @@
     that: rust_telemetry_game.stat.exists
     fail_msg: Deploy rust.yml first; telemetry.yml adds monitoring to an existing deployment.
 
+- name: Read deployed game runtime rather than controller defaults
+  ansible.builtin.slurp:
+    src: /etc/systemd/system/rust.service
+  register: rust_telemetry_game_unit
+
+- name: Extract FEX selected by the deployed game service
+  ansible.builtin.set_fact:
+    rust_telemetry_deployed_fex_paths: >-
+      {{ (rust_telemetry_game_unit.content | b64decode) |
+         regex_findall('(?m)^ExecStart=[^\n]* (/[^ \n]+/bin/FEX) /srv/rust/server/RustDedicated(?: |$)') }}
+
+- name: Require one recognized deployed FEX runtime
+  ansible.builtin.assert:
+    that:
+      - rust_telemetry_deployed_fex_paths | length == 1
+      - rust_telemetry_deployed_fex_paths[0] is match('^/(usr|opt/fex/[a-f0-9]{40})/bin/FEX$')
+    fail_msg: Cannot identify the managed FEX runtime in rust.service; refusing to guess /usr/bin/FEX.
+
+- name: Read the selected telemetry runtime version
+  ansible.builtin.command:
+    argv: ['{{ rust_telemetry_fex | dirname }}/FEXGetConfig', --version]
+  register: rust_telemetry_deployed_fex_version
+  changed_when: false
+  failed_when: >-
+    rust_telemetry_deployed_fex_version.rc != 0 or
+    not (rust_telemetry_deployed_fex_version.stdout | trim is match('^FEX-[A-Za-z0-9._-]+$'))
+
 - name: Install distro telemetry dependencies
   ansible.builtin.apt:
     name: [python3-psutil, python3-websocket, python3-apt, acl]

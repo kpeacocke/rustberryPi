@@ -9,6 +9,20 @@
     - pi_hardware_detected is defined
     - pi_hardware_detected.hailo | length > 0
 
+- name: Detect activated source-managed Hailo runtime
+  ansible.builtin.stat:
+    path: /var/lib/rustberrypi-hailo/active-version
+  register: rust_telemetry_hailo_source_managed
+
+- name: Select Python and library path for isolated HAT analysis
+  ansible.builtin.set_fact:
+    rust_telemetry_hat_python: >-
+      {{ '/opt/rustberrypi-hailo/current/venv/bin/python'
+         if rust_telemetry_hailo_source_managed.stat.exists else '/usr/bin/python3' }}
+    rust_telemetry_hat_library_path: >-
+      {{ '/opt/rustberrypi-hailo/current/runtime/lib'
+         if rust_telemetry_hailo_source_managed.stat.exists else '' }}
+
 - name: Require explicitly supplied compiled HAT model
   ansible.builtin.assert:
     that:
@@ -24,7 +38,7 @@
       - -u
       - rust-telemetry
       - --
-      - /usr/bin/python3
+      - '{{ rust_telemetry_hat_python }}'
       - -c
       - >-
         import os,numpy,hailo_platform;

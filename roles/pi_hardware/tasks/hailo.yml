@@ -19,6 +19,40 @@
   changed_when: false
   failed_when: pi_hardware_pages.stdout | trim != '4096'
 
+- name: Check for an approved source-managed Hailo stack
+  ansible.builtin.stat:
+    path: /var/lib/rustberrypi-hailo/active-version
+  register: pi_hardware_hailo_source_managed
+
+- name: Read active source-managed Hailo release
+  ansible.builtin.command: cat /var/lib/rustberrypi-hailo/active-version
+  register: pi_hardware_hailo_active_version
+  changed_when: false
+  when: pi_hardware_hailo_source_managed.stat.exists
+
+- name: Resolve active source-managed Hailo runtime
+  ansible.builtin.command: readlink -f /opt/rustberrypi-hailo/current
+  register: pi_hardware_hailo_current
+  changed_when: false
+  when: pi_hardware_hailo_source_managed.stat.exists
+
+- name: Require active Hailo marker and runtime pointer to agree
+  ansible.builtin.assert:
+    that:
+      - pi_hardware_hailo_active_version.stdout | trim is match('^4\.[0-9]+\.[0-9]+$')
+      - pi_hardware_hailo_current.stdout | trim == '/var/lib/rustberrypi-hailo/candidates/' ~ (pi_hardware_hailo_active_version.stdout | trim)
+    fail_msg: Active Hailo marker and runtime symlink do not agree.
+  when: pi_hardware_hailo_source_managed.stat.exists
+
+- name: Select source-managed Hailo runtime commands when activated
+  ansible.builtin.set_fact:
+    pi_hardware_hailo_python: >-
+      {{ '/opt/rustberrypi-hailo/current/venv/bin/python'
+         if pi_hardware_hailo_source_managed.stat.exists else '/usr/bin/python3' }}
+    pi_hardware_hailortcli: >-
+      {{ '/opt/rustberrypi-hailo/current/runtime/bin/hailortcli'
+         if pi_hardware_hailo_source_managed.stat.exists else 'hailortcli' }}
+
 - name: Look for exact running-kernel build headers
   ansible.builtin.stat:
     path: '/lib/modules/{{ pi_hardware_kernel.stdout | trim }}/build/Makefile'
@@ -80,6 +114,7 @@
     install_recommends: false
     fail_on_autoremove: true
   register: pi_hardware_hailo_packages
+  when: not pi_hardware_hailo_source_managed.stat.exists
 
 - name: Inspect installed driver for the running kernel
   ansible.builtin.command: modinfo -F version hailo_pci
@@ -91,7 +126,9 @@
   ansible.builtin.command:
     argv: [dkms, autoinstall, -k, '{{ pi_hardware_kernel.stdout | trim }}']
   changed_when: true
-  when: pi_hardware_driver.rc != 0
+  when:
+    - pi_hardware_driver.rc != 0
+    - not pi_hardware_hailo_source_managed.stat.exists
 
 - name: Require loadable driver after installation or kernel change
   ansible.builtin.command: modinfo -F version hailo_pci
@@ -118,12 +155,16 @@
 - name: Apply restricted rules to all existing accelerator nodes # noqa: no-handler -- Must apply before checking device access.
   ansible.builtin.command: udevadm trigger --action=change --subsystem-match=hailo_chardev
   changed_when: true
-  when: pi_hardware_udev.changed or pi_hardware_hailo_packages.changed
+  when: >-
+    pi_hardware_udev.changed or
+    pi_hardware_hailo_packages.changed | default(false)
 
 - name: Wait for accelerator permission events # noqa: no-handler -- Must complete before device verification.
   ansible.builtin.command: udevadm settle --timeout=30
   changed_when: false
-  when: pi_hardware_udev.changed or pi_hardware_hailo_packages.changed
+  when: >-
+    pi_hardware_udev.changed or
+    pi_hardware_hailo_packages.changed | default(false)
 
 - name: Wait for accelerator device
   ansible.builtin.wait_for:
@@ -139,11 +180,12 @@
 
 - name: Verify Hailo Python runtime
   ansible.builtin.command:
-    argv: [/usr/bin/python3, -c, 'import numpy, hailo_platform; print("Hailo Python imports OK")']
+    argv: ['{{ pi_hardware_hailo_python }}', -c, 'import numpy, hailo_platform; print("Hailo Python imports OK")']
   changed_when: false
 
 - name: Identify accelerator and verify runtime driver firmware compatibility
-  ansible.builtin.command: hailortcli fw-control identify
+  ansible.builtin.command:
+    argv: ['{{ pi_hardware_hailortcli }}', fw-control, identify]
   register: pi_hardware_hailo_identity
   changed_when: false
 

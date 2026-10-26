@@ -11,8 +11,10 @@ skip-backup option.
 | `playbooks/maintenance-rust.yml` | Check Steam and update Rust if a newer public build exists |
 | `playbooks/maintenance-os.yml` | Upgrade packages within the configured Debian repositories; reboot by default |
 | `playbooks/maintenance-fex.yml` | Build/adopt and activate an explicitly pinned FEX commit |
+| `playbooks/hailo-candidate.yml` | Check common stable Hailo-8 releases and build a private candidate only |
+| `playbooks/maintenance-hailo.yml` | Back up, activate and hardware-verify one explicitly selected local Hailo candidate |
 | `playbooks/maintenance-all.yml` | OS, then FEX, then Rust in one maintenance window |
-| `playbooks/maintenance.yml` | Select `rust_maintenance_target`: `os`, `fex`, `rust`, `os-rust`, or `all` |
+| `playbooks/maintenance.yml` | Select `rust_maintenance_target`: `os`, `fex`, `rust`, `os-rust`, `hailo`, or `all` |
 
 `os-rust` upgrades Debian packages, reboots, then checks and updates Rust in one
 maintenance window, preserving the deployed FEX version.
@@ -47,10 +49,49 @@ playbooks to implement “all”: that would cause three countdowns and restarts
    Rust, upstream FEX and installed FEX results. A probe failure fails the job
    explicitly but does not stop the recovered game or reapply the offline guard.
 
+## Hailo source candidates
+
+The candidate job checks the stable 4.x release tags published by both HailoRT
+and the PCIe-driver repositories, selects their newest common tag, and builds
+the runtime/CLI, Python bindings, and PCIe module for the exact running kernel.
+It downloads only the matching Hailo-8 firmware from Hailo's official URL. The
+driver/runtime sources are fetched from their upstream tags. Candidates and
+firmware stay under `/var/lib/rustberrypi-hailo` on the Pi; the job does not
+install them, copy them to the controller, or upload them as AWX artifacts.
+
+Hailo firmware has separate terms. Before enabling the job, accept Hailo's
+firmware terms yourself and set the private AWX **host** variable
+`rust_maintenance_hailo_firmware_eula_accepted: true`. Its repository default is `false`;
+the playbook fails closed until that private approval is present. Do not set
+this value in a survey, shared group variables or public files.
+
+Create an AWX job template for `playbooks/hailo-candidate.yml` and schedule it
+daily or weekly at a quiet time. It builds only when a newer common 4.x tag is
+available; it never changes the active driver. To install, launch
+`playbooks/maintenance-hailo.yml` (or select `hailo` in the maintenance survey)
+and enter the exact candidate version. That job requires the same mounted NAS
+backup and running Rust server as other maintenance. It stops the HAT worker,
+checks candidate hashes and kernel match, installs the driver through DKMS,
+switches the versioned runtime, and tests `hailortcli fw-control identify`.
+On failed hardware validation it attempts to restore the previous firmware,
+runtime pointer and DKMS module, then continues normal game/RCON recovery. A
+rollback failure leaves the normal persistent maintenance guard in place.
+
+The Hailo-8 4.x source line is selected intentionally; global 5.x releases target
+other products. A successful v4.24 candidate build does not prove it fixes a
+specific NNC firmware timeout. The installed device still requires successful
+`fw-control identify` and a real HAT inference test before enabling
+`rust_telemetry_hat_enabled`.
+
 The installed FEX version is queried from `FEXGetConfig` beside the selected
 runtime, not inferred from a configured version label. This local check is
 independent of the upstream release API, so connectivity failures do not hide
 the installed version. Refreshing telemetry alone does not rerun update checks.
+Telemetry-only deployments discover the FEX executable from the deployed
+`rust.service`, rather than defaulting to `/usr/bin/FEX`. An older system-wide
+FEX can remain installed alongside the versioned runtime without implying that
+the game was downgraded. The telemetry configuration records the selected
+binary's reported version, not the repository's desired release label.
 
 After both readiness checks pass, the workflow records the verified target and
 Pi completion timestamp for advisory performance comparison. The collector waits

@@ -3,11 +3,15 @@
   ansible.builtin.assert:
     that:
       - not ansible_check_mode
-      - rust_maintenance_target in ['os', 'fex', 'rust', 'os-rust', 'all']
+      - rust_maintenance_target in ['os', 'fex', 'rust', 'os-rust', 'all', 'hailo']
       - rust_maintenance_warning_seconds | int >= 0
       - rust_maintenance_warning_seconds | int <= 3600
       - rust_maintenance_health_timeout | int >= 60
       - ansible_facts['distribution'] == 'Debian'
+      - >-
+        rust_maintenance_target != 'hailo' or
+        (rust_maintenance_hailo_version is match('^4\.[0-9]+\.[0-9]+$') and
+        rust_maintenance_hailo_firmware_eula_accepted | bool)
       - >-
         rust_maintenance_target not in ['os', 'os-rust', 'all'] or not rust_maintenance_os_reboot | bool
         or ansible_connection | default('ssh') != 'local'
@@ -16,8 +20,24 @@
         (rust_maintenance_fex_commit is match('^[a-f0-9]{40}$') and
         rust_maintenance_fex_version is match('^[A-Za-z0-9._-]+$'))
     fail_msg: >-
-      Choose os, fex, rust, os-rust or all. FEX requires an explicit commit and version.
-      Rebooting OS jobs require an SSH controller; local jobs must set rust_maintenance_os_reboot=false.
+      Choose os, fex, rust, os-rust, all or hailo. FEX requires an explicit commit and version.
+      Hailo requires an exact built candidate version and the private firmware EULA
+      acceptance host variable. Rebooting OS jobs require an SSH controller;
+      local jobs must set rust_maintenance_os_reboot=false.
+
+- name: Verify approved Hailo candidate exists before downtime
+  ansible.builtin.stat:
+    path: '/var/lib/rustberrypi-hailo/candidates/{{ rust_maintenance_hailo_version }}/READY'
+  register: rust_maintenance_hailo_candidate
+  when: rust_maintenance_target == 'hailo'
+
+- name: Require completed Hailo candidate before downtime
+  ansible.builtin.assert:
+    that: rust_maintenance_hailo_candidate.stat.isreg | default(false)
+    fail_msg: >-
+      Build the selected candidate with playbooks/hailo-candidate.yml before
+      launching Hailo maintenance.
+  when: rust_maintenance_target == 'hailo'
 
 - name: Install maintenance control utility
   ansible.builtin.copy:
@@ -48,7 +68,7 @@
 - name: Record initial service and timer states
   ansible.builtin.command:
     argv: [systemctl, show, '{{ item }}', '--property=ActiveState', --value]
-  loop: [rust-backup.timer, rust-maintenance-check.timer, rust-telemetry.service, rust-watchdog.timer]
+  loop: [rust-backup.timer, rust-maintenance-check.timer, rust-telemetry.service, rust-health-hat.service, rust-watchdog.timer]
   register: rust_maintenance_initial_units
   changed_when: false
   failed_when: false
@@ -163,6 +183,10 @@
     - name: Run Rust job
       ansible.builtin.include_tasks: rust.yml
       when: rust_maintenance_target in ['rust', 'os-rust', 'all']
+
+    - name: Activate approved Hailo source candidate
+      ansible.builtin.include_tasks: hailo.yml
+      when: rust_maintenance_target == 'hailo'
 
     - name: Require 4 KB kernel pages after maintenance
       ansible.builtin.command: getconf PAGESIZE

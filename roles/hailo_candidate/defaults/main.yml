@@ -1,0 +1,18 @@
+---
+hailo_candidate_firmware_eula_accepted: >-
+  {{ rust_maintenance_hailo_firmware_eula_accepted | default(false) | bool }}
+hailo_candidate_build_packages:
+  - cmake
+  - dkms
+  - g++
+  - git
+  - libssl-dev
+  - libusb-1.0-0-dev
+  - make
+  - pkg-config
+  - python3-dev
+  - python3-pip
+  - python3-setuptools
+  - python3-venv
+  - python3-wheel
+  - zlib1g-dev

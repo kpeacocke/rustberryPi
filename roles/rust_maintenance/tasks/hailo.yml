@@ -1,0 +1,23 @@
+---
+- name: Install Hailo candidate activation utility
+  ansible.builtin.copy:
+    src: '{{ playbook_dir }}/../tools/hailo_install.py'
+    dest: /usr/local/libexec/rustberrypi-hailo-install.py
+    owner: root
+    group: root
+    mode: '0750'
+
+- name: Activate and hardware-verify selected Hailo candidate
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - /usr/local/libexec/rustberrypi-hailo-install.py
+      - '{{ rust_maintenance_hailo_version }}'
+  register: rust_maintenance_hailo_install
+  changed_when: rust_maintenance_hailo_install.rc == 0
+  failed_when: rust_maintenance_hailo_install.rc not in [0, 10]
+
+- name: Report candidate rollback while allowing game recovery
+  ansible.builtin.debug:
+    msg: '{{ rust_maintenance_hailo_install.stderr | trim }}'
+  when: rust_maintenance_hailo_install.rc == 10

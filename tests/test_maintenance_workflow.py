@@ -1,9 +1,12 @@
 """Maintenance announcements and independently verified backup boundaries."""
+import ast
+import base64
 import hashlib
 import importlib.util
 import io
 import json
 from pathlib import Path
+import re
 import sys
 import tarfile
 import tempfile
@@ -11,6 +14,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 import yaml
+from jinja2 import Environment, StrictUndefined
 
 ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location('maintenance_control', ROOT / 'maintenance/control.py')
@@ -20,6 +24,46 @@ with patch.dict(sys.modules, {'websocket': MagicMock()}):
 
 
 class MaintenanceTests(unittest.TestCase):
+    def test_telemetry_only_deploy_discovers_versioned_game_fex(self):
+        defaults = yaml.safe_load(
+            (ROOT / 'roles/rust_telemetry/defaults/main.yml').read_text()
+        )
+        tasks = yaml.safe_load(
+            (ROOT / 'roles/rust_telemetry/tasks/main.yml').read_text()
+        )
+        extraction = next(
+            task['ansible.builtin.set_fact']
+            ['rust_telemetry_deployed_fex_paths']
+            for task in tasks
+            if task['name'] ==
+            'Extract FEX selected by the deployed game service'
+        )
+        env = Environment(undefined=StrictUndefined)
+        env.filters['b64decode'] = lambda text: base64.b64decode(text).decode()
+        env.filters['regex_findall'] = lambda text, pattern: re.findall(
+            pattern, text
+        )
+
+        for fex in ('/usr/bin/FEX', '/opt/fex/' + 'a' * 40 + '/bin/FEX'):
+            with self.subTest(fex=fex):
+                unit = (
+                    '[Service]\nExecStart=/usr/bin/python3 /helper/launch.py '
+                    + fex + ' /srv/rust/server/RustDedicated -batchmode\n'
+                )
+                encoded = base64.b64encode(unit.encode()).decode()
+                paths = ast.literal_eval(env.from_string(extraction).render(
+                    rust_telemetry_game_unit={'content': encoded}
+                ))
+                self.assertEqual(paths, [fex])
+                actual = env.from_string(defaults['rust_telemetry_fex'])
+                self.assertEqual(actual.render(
+                    rust_telemetry_deployed_fex_paths=paths
+                ), fex)
+        version = env.from_string(defaults['rust_telemetry_fex_version'])
+        self.assertEqual(version.render(
+            rust_telemetry_deployed_fex_version={'stdout': 'FEX-2610\n'}
+        ), 'FEX-2610')
+
     def test_successful_maintenance_restarts_telemetry_before_fresh_rcon_check(self):
         tasks = yaml.safe_load((ROOT / 'roles/rust_maintenance/tasks/main.yml').read_text())
         workflow = next(task for task in tasks if task['name'] == 'Execute selected jobs inside one maintenance window')

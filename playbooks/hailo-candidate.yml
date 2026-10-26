@@ -1,0 +1,7 @@
+---
+- name: Build a private Hailo-8 release candidate without installing it
+  hosts: rust_servers
+  become: true
+  serial: 1
+  roles:
+    - hailo_candidate

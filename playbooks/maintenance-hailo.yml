@@ -1,0 +1,11 @@
+---
+- name: Install and validate one approved local Hailo candidate
+  hosts: rust_servers
+  become: true
+  serial: 1
+  vars:
+    rust_maintenance_target: hailo
+  roles:
+    - role: rust_nas
+      when: rust_nas_enabled | default(false) | bool
+    - rust_maintenance

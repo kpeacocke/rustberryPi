@@ -1,6 +1,6 @@
 ---
-fex_commit: e2f973fe931e6dc2ce523795e51ca1ac3ca85816
-fex_version: FEX-2609-120-ge2f973fe9
+fex_commit: 14c92681f4d62cf84d901460e0358de09c8847a7
+fex_version: FEX-2610
 fex_rootfs_sha256: 2854b06d3ff1b8f6e526135bfb6dd5b7b30ab3ab73e79ae933a3d9fed959a178
 fex_rootfs_url: https://rootfs.fex-emu.gg/Ubuntu_24_04/2026-08-11/Ubuntu_24_04.sqsh
 fex_rootfs_path: /opt/fex/rootfs/ubuntu-24.04-2026-08-11

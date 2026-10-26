@@ -24,7 +24,7 @@ require the hardware acceptance procedure below.
 | Host | `raspberrypi.example.invalid`, SSH user `piadmin` (edit inventory if needed) |
 | Kernel | `/boot/firmware/kernel8.img`; require `getconf PAGESIZE` = `4096` |
 | Observed kernel | `6.18.50+rpt-rpi-v8`; ABI version is not frozen |
-| FEX | `e2f973fe931e6dc2ce523795e51ca1ac3ca85816` / `FEX-2609-120-ge2f973fe9` |
+| FEX | `14c92681f4d62cf84d901460e0358de09c8847a7` / `FEX-2610` |
 | RootFS | FEX Ubuntu 24.04, image dated 2026-08-11; Ubuntu 24.04.4 userspace |
 | Steam app | `258550`, public branch, anonymous login |
 | World | identity `rustberry`, procedural size `1500`, seed `12345`, five players |
@@ -523,7 +523,7 @@ the manifest must be generated from a checksum-verified image using
 `tools/rootfs_manifest.py`. Never relabel arbitrary content as an existing pin.
 Review SteamCMD bootstrap checksum changes rather than disabling verification.
 
-- [FEX pinned source](https://github.com/FEX-Emu/FEX/tree/e2f973fe931e6dc2ce523795e51ca1ac3ca85816)
+- [FEX pinned source](https://github.com/FEX-Emu/FEX/tree/14c92681f4d62cf84d901460e0358de09c8847a7)
 - [FEX RootFS image](https://rootfs.fex-emu.gg/Ubuntu_24_04/2026-08-11/Ubuntu_24_04.sqsh)
 - [Facepunch server setup and ports](https://wiki.facepunch.com/rust/Creating-a-server)
 - [Valve SteamCMD](https://developer.valvesoftware.com/wiki/SteamCMD)
@@ -754,6 +754,9 @@ An optional isolated Hailo-8/8L worker runs a learned workload-conditioned
 predictor with CPU-reference parity checks. It requires real training data,
 Hailo's compiler and a chip-specific compiled model; no pretrained or
 hardware-certified model is bundled. See [server analysis and HAT commissioning](telemetry/README.md#server-early-warning-and-hailo).
+The separate [Hailo candidate and maintenance workflow](maintenance/README.md#hailo-source-candidates)
+builds a private source candidate for the latest common Hailo-8 4.x release and
+requires an explicit, backed-up maintenance launch before installation.
 
 For manual model training, use the [portable training kit](telemetry/README.md#portable-training-kit).
 The Pi exports a private ZIP of numeric telemetry, training code and environment/build

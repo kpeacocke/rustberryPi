@@ -11,7 +11,8 @@ NotifyAccess=main
 User=rust-telemetry
 Group=rust-telemetry
 WorkingDirectory=/opt/rustberrypi
-ExecStart=/usr/bin/python3 -m telemetry.hat
+Environment=LD_LIBRARY_PATH={{ rust_telemetry_hat_library_path }}
+ExecStart={{ rust_telemetry_hat_python }} -m telemetry.hat
 Restart=on-failure
 RestartSec=10
 WatchdogSec=30
