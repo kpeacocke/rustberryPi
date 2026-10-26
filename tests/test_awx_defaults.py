@@ -9,6 +9,32 @@ import yaml
 
 
 class AwxDefaultsTests(unittest.TestCase):
+    def test_dedicated_hailo_survey_requires_candidate_not_eula_approval(self):
+        root = Path(__file__).resolve().parents[1]
+        survey = json.loads(
+            (root / 'awx/hailo-maintenance-survey.json').read_text()
+        )
+        questions = {item['variable']: item for item in survey['spec']}
+        self.assertEqual(set(questions), {
+            'rust_maintenance_hailo_version',
+            'rust_maintenance_warning_seconds',
+        })
+        version = questions['rust_maintenance_hailo_version']
+        self.assertTrue(version['required'])
+        self.assertEqual(version['type'], 'text')
+        self.assertEqual(version['default'], '')
+        countdown = questions['rust_maintenance_warning_seconds']
+        self.assertTrue(countdown['required'])
+        self.assertEqual(countdown['type'], 'integer')
+        self.assertEqual(
+            (countdown['default'], countdown['min'], countdown['max']),
+            (600, 0, 3600),
+        )
+        play = yaml.safe_load(
+            (root / 'playbooks/maintenance-hailo.yml').read_text()
+        )[0]
+        self.assertEqual(play['vars']['rust_maintenance_target'], 'hailo')
+
     def test_local_and_awx_defaults_match(self):
         root = Path(__file__).resolve().parents[1]
         local = root / 'inventory/group_vars/rust_servers.yml'

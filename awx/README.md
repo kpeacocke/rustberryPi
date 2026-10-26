@@ -56,7 +56,7 @@ overrides on the AWX **host**, not in shared group defaults.
 | OS maintenance | `playbooks/maintenance-os.yml` | OS only |
 | FEX maintenance | `playbooks/maintenance-fex.yml` | FEX only; exact commit/version required |
 | Hailo candidate | `playbooks/hailo-candidate.yml` | Builds a private candidate only; never installs |
-| Hailo maintenance | `playbooks/maintenance-hailo.yml` | Installs an exact candidate after backup and announcement |
+| Hailo maintenance | `playbooks/maintenance-hailo.yml` | Survey from `awx/hailo-maintenance-survey.json`; installs an exact candidate after backup and announcement |
 | Rust maintenance | `playbooks/maintenance-rust.yml` | Rust only |
 | All maintenance | `playbooks/maintenance-all.yml` | One countdown/backup for OS, FEX and Rust |
 | Select maintenance | `playbooks/maintenance.yml` | Survey from `awx/maintenance-survey.json` |
@@ -158,8 +158,15 @@ firmware terms and setting the private host variable
 `rust_maintenance_hailo_firmware_eula_accepted: true`. The builder keeps all outputs on the
 Pi and never uploads firmware. `playbooks/maintenance-hailo.yml` is a distinct
 NAS-backed, manual maintenance action; select an exact candidate version and
-review its rollback/hardware validation output. The maintenance survey includes
-the `hailo` choice. Re-import `awx/maintenance-survey.json` after syncing.
+review its rollback/hardware validation output. Import
+`awx/hailo-maintenance-survey.json` into that dedicated template and enable its
+survey. Both the version and countdown are required launch inputs; the EULA
+approval is intentionally not a survey field. The candidate-build template
+needs no survey and never chains automatically into installation.
+The selectable maintenance survey also includes the `hailo` choice.
+Re-import `awx/maintenance-survey.json` after syncing if using that template
+instead. These files define launch surveys, not AWX job-template objects;
+project sync alone does not create templates or import surveys.
 
 A genuinely fleet-wide, non-secret default belongs in
 `inventory/group_vars/rust_servers.yml` **and** the identical

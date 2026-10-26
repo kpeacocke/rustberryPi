@@ -1,0 +1,26 @@
+{
+  "name": "Install Hailo candidate",
+  "description": "Install an explicitly selected candidate already built on the Pi. Announces downtime and requires a verified NAS backup. Firmware EULA approval must be supplied separately in private host variables.",
+  "spec": [
+    {
+      "question_name": "Hailo candidate version",
+      "question_description": "Exact stable 4.x version reported by the candidate build, without a v prefix. Do not enter latest.",
+      "required": true,
+      "type": "text",
+      "variable": "rust_maintenance_hailo_version",
+      "default": "",
+      "min": 5,
+      "max": 32
+    },
+    {
+      "question_name": "Warning countdown in seconds",
+      "question_description": "600 gives ten minutes. Zero still announces immediately before saving and stopping.",
+      "required": true,
+      "type": "integer",
+      "variable": "rust_maintenance_warning_seconds",
+      "default": 600,
+      "min": 0,
+      "max": 3600
+    }
+  ]
+}

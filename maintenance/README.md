@@ -68,7 +68,9 @@ this value in a survey, shared group variables or public files.
 Create an AWX job template for `playbooks/hailo-candidate.yml` and schedule it
 daily or weekly at a quiet time. It builds only when a newer common 4.x tag is
 available; it never changes the active driver. To install, launch
-`playbooks/maintenance-hailo.yml` (or select `hailo` in the maintenance survey)
+`playbooks/maintenance-hailo.yml` with its dedicated
+[`awx/hailo-maintenance-survey.json`](../awx/hailo-maintenance-survey.json)
+imported and enabled (or select `hailo` in the selectable maintenance survey)
 and enter the exact candidate version. That job requires the same mounted NAS
 backup and running Rust server as other maintenance. It stops the HAT worker,
 checks candidate hashes and kernel match, installs the driver through DKMS,
