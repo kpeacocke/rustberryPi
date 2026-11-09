@@ -7,7 +7,10 @@ from pathlib import Path
 
 
 def release_version():
-    path = Path(__file__).resolve().parents[4] / "tools/hailo_candidate.py"
+    source = Path(__file__).resolve()
+    path = source.parents[1] / "module_utils/hailo_candidate.py"
+    if not path.is_file():
+        path = source.parents[4] / "tools/hailo_candidate.py"
     spec = importlib.util.spec_from_file_location(
         "hailo_release_builder", path
     )

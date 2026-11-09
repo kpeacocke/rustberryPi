@@ -185,7 +185,8 @@ podman build -f extensions/eda/Dockerfile \
   -t localhost/rustberrypi-eda-hailo:YOUR_REVISION .
 ```
 
-The base image must run as UID 1001, as the Dockerfile restores that user.
+The Dockerfile preserves the base image's runtime user and needs no shell build
+steps, so packaging does not require starting a nested build container.
 The Dockerfile includes only the source and shared release selector, not private
 inventory or firmware. Use a locally cached image with pull policy **Never**
 when the activation worker uses that same Podman backend; otherwise publish it
