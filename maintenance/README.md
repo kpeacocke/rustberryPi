@@ -13,6 +13,7 @@ skip-backup option.
 | `playbooks/maintenance-fex.yml` | Build/adopt and activate an explicitly pinned FEX commit |
 | `playbooks/hailo-candidate.yml` | Check common stable Hailo-8 releases and build a private candidate only |
 | `playbooks/maintenance-hailo.yml` | Back up, activate and hardware-verify one explicitly selected local Hailo candidate |
+| `playbooks/hailo-control.yml` | Inspect, disable, explicitly enable-and-verify, or install a candidate while Hailo remains disabled; never changes Rust lifecycle |
 | `playbooks/maintenance-all.yml` | OS, FEX, Rust, then Hailo on detected Hailo hosts in one maintenance window |
 | `playbooks/maintenance.yml` | Select `rust_maintenance_target`: `os`, `fex`, `rust`, `os-rust`, `hailo`, or `all` |
 
@@ -38,8 +39,9 @@ playbooks to implement “all”: that would cause three countdowns and restarts
    members and validate paths/types plus deployment metadata. This verifies archive
    integrity, **not** a restore rehearsal or a bootable OS backup.
 7. Run only the selected component(s). “All” runs OS → FEX → Rust → Hailo
-   when the existing read-only PCI detector finds Hailo hardware; otherwise it
-   explicitly skips Hailo. Inference enablement is independent.
+   when the existing read-only PCI detector finds Hailo hardware and the
+   persistent Hailo safety latch is clear; otherwise it explicitly skips Hailo
+   and reports whether hardware was absent or the latch was active.
 8. Check 4 KB pages, start Rust, wait for A2S readiness, restart telemetry, and
    wait for fresh authenticated RCON telemetry. Then clear the historical
    automatic restart counter, report success and restore previously running
@@ -66,6 +68,74 @@ firmware terms yourself and set the private AWX **host** variable
 `rust_maintenance_hailo_firmware_eula_accepted: true`. Its repository default is `false`;
 the playbook fails closed until that private approval is present. Do not set
 this value in a survey, shared group variables or public files.
+
+## Persistent Hailo safety control
+
+The explicit control entry point is
+[`playbooks/hailo-control.yml`](../playbooks/hailo-control.yml), using the
+[`awx/hailo-control-survey.json`](../awx/hailo-control-survey.json) survey.
+Its `rust_hailo_control_action` choices are `status` (default), `disable`,
+`enable_verify`, and `install_while_disabled`; the last choice also requires an
+exact `rust_hailo_control_version` for a ready candidate built for the running
+kernel.
+
+Disable stops and masks only `rust-health-hat.service`, persists an explicit
+modprobe denial plus blacklist, removes the Hailo modules-load entry, rebuilds
+all installed initramfs variants, and tries `modprobe -r hailo_pci` without
+force. A busy module is reported as still loaded; the boot policy is retained
+and no Rust service is touched. Repeating Disable is safe. Status reports the
+latch independently of HAT inference configuration and PCI presence. The
+control job does not reboot.
+An existing root-owned local HAT unit is preserved under
+`/usr/local/lib/systemd/system/rust-health-hat.service` before replacing its
+`/etc/systemd/system` path with the mask; conflicting copies fail closed.
+Future telemetry provisioning writes the vendor path and keeps the unit masked
+unless inference is explicitly enabled. Status reports `not-installed` only
+when no loaded module, source-managed runtime, module binary, DKMS source
+or installed driver package exists; a broken installed driver remains a failure.
+This also permits initial provisioning with a physically attached but uninstalled
+HAT. Disabled status includes `driver_version`, `source_managed_version`,
+`installed_version`, `verification_pending` and `hardware_verification`, without
+loading or identifying hardware. An absent driver does not invalidate the latch.
+Disable succeeds only when the module is observed unloaded, even if the unload
+command itself returned success.
+
+Enable-and-verify is an explicit action: it requires supported Hailo-8 hardware
+to be present and the previous module to be unloaded, validates the driver
+against the running kernel and runtime,
+loads the module using `modprobe --ignore-install hailo_pci`, and runs
+`hailortcli fw-control identify`. The persistent rootfs block and disabled marker
+remain intact through loading, identification and Python import verification;
+only successful verification permits clearing the block and rebuilding initramfs.
+It leaves the
+inference unit stopped and masked. If any verification fails, the workflow
+reapplies the disabled policy, removes autoload configuration, rebuilds all
+initramfs variants, and attempts a non-forced unload; the job reports any
+restoration limitation. Kernel faults can prevent recovery.
+
+Install-while-disabled only accepts a candidate with valid artifact hashes,
+source commits, architecture and running-kernel build. It updates the
+driver only after checking the complete boot safety policy and explicitly
+inactive, masked inference service; failed service inspections are errors.
+It updates the
+source-managed DKMS driver, runtime and Pi-side firmware without loading the
+module or identifying hardware. Inference remains stopped and masked, the
+safety latch stays active throughout success or rollback, and the result is
+explicitly unverified. It does not imply hardware acceptance. APT-managed
+4.23.0 installations can be enabled and verified directly; they do not need an
+active source-runtime symlink.
+
+Normal Hailo provisioning checks the persistent latch before installing
+packages, loading the driver or recreating autoload policy. HAT deployment
+keeps inference stopped and masked while latched even if
+`rust_telemetry_hat_enabled` is true. Standalone Hailo maintenance fails closed
+while disabled. All deliberately skips Hailo, reports why, and does not infer
+the safety state from hardware presence or the inference toggle. These actions
+do not clear the latch; use the explicit control workflow to enable hardware.
+For AWX, use a dedicated `rust_servers` template with become enabled, concurrency
+and slicing disabled, no schedule, and **28800 seconds** timeout. Restrict its
+launch permissions to trusted operators because it controls kernel loading and
+can install an approved local candidate.
 
 Create an AWX job template for `playbooks/hailo-candidate.yml`. The EDA
 [`rulebooks/hailo-candidate.yml`](../rulebooks/hailo-candidate.yml) can trigger
@@ -112,6 +182,10 @@ architecture and kernel checks remain mandatory before activation. If there
 is no newer release, All explicitly verifies the installed module's running-kernel
 match and `fw-control identify` rather than treating a selection failure as success.
 Missing modules, invalid artifacts and hardware errors fail visibly.
+If the persistent Hailo safety latch is active, All explicitly skips Hailo
+regardless of PCI detection; OS, FEX and Rust work selected by All remain
+independent. No provisioning, ordinary install, rollback, or OS reboot removes
+the latch.
 For an already-current source-managed runtime, the original manifest is immutable
 build provenance, not the installed module's post-OS kernel identity. Its hashes,
 source commits and architecture are still checked; the installed module's

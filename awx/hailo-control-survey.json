@@ -1,0 +1,30 @@
+{
+  "name": "Hailo safety control",
+  "description": "Read status, persistently disable Hailo, explicitly enable and verify supported hardware, or install an exact ready candidate while the safety block remains active. This workflow never changes Rust service lifecycle.",
+  "spec": [
+    {
+      "question_name": "Hailo control action",
+      "question_description": "Default is read-only status. Disable stops and masks only rust-health-hat.service, blocks autoload and explicit modprobe, updates all initramfs variants, and attempts a non-forced unload. Enable requires a present Hailo-8 device and leaves inference stopped and masked. Disabled install requires a ready candidate built for the running kernel and never loads or identifies hardware.",
+      "required": true,
+      "type": "multiplechoice",
+      "variable": "rust_hailo_control_action",
+      "choices": [
+        "status",
+        "disable",
+        "enable_verify",
+        "install_while_disabled"
+      ],
+      "default": "status"
+    },
+    {
+      "question_name": "Exact candidate version for disabled installation",
+      "question_description": "Required only for install_while_disabled. Enter an exact stable 4.x version already built locally for the running kernel, without a leading v. It must pass candidate hashes/source integrity checks and must be newer than the installed driver.",
+      "required": false,
+      "type": "text",
+      "variable": "rust_hailo_control_version",
+      "default": "",
+      "min": 0,
+      "max": 32
+    }
+  ]
+}

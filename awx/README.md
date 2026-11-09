@@ -57,6 +57,7 @@ overrides on the AWX **host**, not in shared group defaults.
 | FEX maintenance | `playbooks/maintenance-fex.yml` | FEX only; exact commit/version required |
 | Hailo candidate | `playbooks/hailo-candidate.yml` | Builds a private candidate only; never installs |
 | Hailo maintenance | `playbooks/maintenance-hailo.yml` | Survey from `awx/hailo-maintenance-survey.json`; installs an exact candidate after backup and announcement |
+| Hailo safety control | `playbooks/hailo-control.yml` | Survey from `awx/hailo-control-survey.json`; status, disable, enable-and-verify, or install a candidate while disabled |
 | Rust maintenance | `playbooks/maintenance-rust.yml` | Rust only |
 | All maintenance | `playbooks/maintenance-all.yml` | One countdown/backup for OS, FEX, Rust and detected Hailo hardware |
 | Select maintenance | `playbooks/maintenance.yml` | Survey from `awx/maintenance-survey.json` |
@@ -146,11 +147,56 @@ uses host variables `rust_telemetry_hat_enabled: true` and
 private compiled HEF/manifest through a reviewed read-only artifact mount or
 private deployment source; do not commit them to the public project. Both deploy
 playbooks automatically detect Hailo/CSI hardware and provision its runtime,
-driver and permissions; no manual package job or camera capture is needed.
+driver and permissions unless the persistent Hailo safety latch is present;
+while latched, Hailo provisioning and HAT inference are skipped regardless of
+hardware detection or the inference toggle. No manual package job or camera
+capture is needed.
 Exact running-kernel headers must be available. Model compilation and real
 hardware acceptance remain prerequisites for enabling HAT inference.
 See [HAT commissioning](../telemetry/README.md#server-early-warning-and-hailo).
 No new survey, credential or game-control permission is required.
+
+### Hailo safety control
+
+Create a dedicated job template for `playbooks/hailo-control.yml`, import
+`awx/hailo-control-survey.json`, enable privilege escalation and use the
+`rust_servers` inventory. The launch variable
+`rust_hailo_control_action` defaults to `status` and offers exactly
+`status`, `disable`, `enable_verify`, and `install_while_disabled`.
+`rust_hailo_control_version` is used only by the last choice and must identify
+an exact, ready local candidate for the running kernel. Keep this template
+restricted to trusted Hailo operators: it changes kernel-module policy and can
+install a driver/runtime. Disable template concurrency and slicing, do not
+schedule it, and do not overlap it with candidate builds or maintenance. Use a
+**28800-second (8-hour) timeout** so the action can wait for an in-flight
+candidate/build lock and complete a bounded DKMS transaction; the control
+commands, initramfs rebuild (all installed kernel variants), and Rust lifecycle
+lock have their own time limits.
+
+`status` is read-only and reports control policy, module load state, PCI
+presence, and whether a previous explicit hardware verification still matches
+the running kernel. It does not activate or identify hardware. `disable`
+stops and masks only `rust-health-hat.service`, installs both an explicit
+modprobe denial and blacklist, removes the Hailo modules-load entry, rebuilds
+all initramfs variants, and attempts a non-forced module unload. An unload
+failure is reported and never described as unloaded; the persistent boot block
+is retained. `enable_verify` requires a connected supported Hailo-8 board,
+checks the running-kernel module and runtime, loads and identifies the device,
+then leaves inference stopped and masked. On failure it restores the disabled
+policy where possible. `install_while_disabled` accepts only a complete,
+integrity-checked candidate for the running kernel, updates source-managed
+driver/runtime/firmware, and keeps module loading blocked and inference off; it
+does not modprobe, identify the board, or claim hardware verification. APT-
+managed installed 4.23.0 can be explicitly enabled and verified without a
+source-managed runtime link.
+
+This workflow never stops, starts, restarts or otherwise changes Rust. It does
+not reboot. The disable policy is persistent across OS provisioning, All
+maintenance and OS reboots; ordinary Hailo maintenance refuses to clear it and
+All explicitly skips Hailo while latched, even if a PCI device is detected.
+The control workflow does not modify the public dashboard candidate-readiness
+artifact. Keep firmware EULA approval in private host variables; it is not a
+survey field.
 
 Hailo source updates use a separate candidate-only AWX job template for
 `playbooks/hailo-candidate.yml`; schedule it only after accepting Hailo's
@@ -172,6 +218,9 @@ Its `all` choice includes Hailo when the existing read-only PCI detector finds
 Hailo hardware; hosts without Hailo explicitly skip it. This is independent of
 `rust_telemetry_hat_enabled`, which enables inference only. Private
 `rust_maintenance_hailo_firmware_eula_accepted: true` remains required.
+If the persistent Hailo safety latch is active, All explicitly skips Hailo
+regardless of PCI detection and still performs its selected OS/FEX/Rust work;
+ordinary deployment/provisioning does not remove that latch.
 All validates/pins the common stable Hailo-8 4.x release or exact optional
 `rust_maintenance_hailo_version` override before downtime, then builds/revalidates
 against the actual running kernel after OS work/reboot. Already-current hosts

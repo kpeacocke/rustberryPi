@@ -26,6 +26,23 @@
     that: rust_telemetry_game.stat.exists
     fail_msg: Deploy rust.yml first; telemetry.yml adds monitoring to an existing deployment.
 
+- name: Read persistent Hailo safety latch before telemetry deployment
+  ansible.builtin.stat:
+    path: /var/lib/rustberrypi-hailo/disabled
+  register: rust_telemetry_hailo_disabled
+
+- name: Read persistent Hailo modprobe safety policy
+  ansible.builtin.stat:
+    path: /etc/modprobe.d/rustberrypi-hailo-disabled.conf
+  register: rust_telemetry_hailo_policy
+
+- name: Reject an unsafe Hailo safety-latch path
+  ansible.builtin.assert:
+    that:
+      - not rust_telemetry_hailo_disabled.stat.islnk | default(false)
+      - not rust_telemetry_hailo_policy.stat.islnk | default(false)
+    fail_msg: A Hailo safety-policy path is a symlink; refusing telemetry deployment.
+
 - name: Read deployed game runtime rather than controller defaults
   ansible.builtin.slurp:
     src: /etc/systemd/system/rust.service

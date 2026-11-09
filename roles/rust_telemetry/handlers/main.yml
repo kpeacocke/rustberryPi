@@ -16,4 +16,7 @@
     name: rust-health-hat.service
     daemon_reload: true
     state: restarted
-  when: rust_telemetry_hat_enabled | bool
+  when:
+    - rust_telemetry_hat_enabled | bool
+    - not rust_telemetry_hailo_disabled.stat.exists
+    - not rust_telemetry_hailo_policy.stat.exists

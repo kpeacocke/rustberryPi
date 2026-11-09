@@ -21,6 +21,48 @@
       Rebooting OS jobs require an SSH controller;
       local jobs must set rust_maintenance_os_reboot=false.
 
+- name: Install Hailo safety controller for maintenance preflight
+  ansible.builtin.copy:
+    src: '{{ playbook_dir }}/../tools/hailo_install.py'
+    dest: /usr/local/libexec/rustberrypi-hailo-install.py
+    owner: root
+    group: root
+    mode: '0750'
+  when: rust_maintenance_target in ['all', 'hailo']
+
+- name: Read persistent Hailo safety state before maintenance
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - /usr/local/libexec/rustberrypi-hailo-install.py
+      - --control
+      - status
+  register: rust_maintenance_hailo_control
+  changed_when: false
+  when: rust_maintenance_target in ['all', 'hailo']
+
+- name: Require readable Hailo safety state
+  ansible.builtin.assert:
+    that: (rust_maintenance_hailo_control.stdout | from_json).state != 'failure'
+    fail_msg: >-
+      Hailo safety status is inconsistent or unreadable; refusing maintenance.
+      Inspect the Hailo control workflow before continuing.
+  when: rust_maintenance_target in ['all', 'hailo']
+
+- name: Remember persistent Hailo safety latch
+  ansible.builtin.set_fact:
+    rust_maintenance_hailo_disabled: >-
+      {{ (rust_maintenance_hailo_control.stdout | from_json).disabled | bool }}
+  when: rust_maintenance_target in ['all', 'hailo']
+
+- name: Refuse ordinary Hailo activation while safety-disabled
+  ansible.builtin.assert:
+    that: not rust_maintenance_hailo_disabled | bool
+    fail_msg: >-
+      Hailo maintenance cannot clear the persistent safety latch. Use the
+      explicit Hailo control action; All deliberately skips Hailo while disabled.
+  when: rust_maintenance_target == 'hailo'
+
 - name: Install existing read-only peripheral detector for All
   ansible.builtin.copy:
     src: '{{ playbook_dir }}/../roles/pi_hardware/files/detect.py'
@@ -40,7 +82,9 @@
 - name: Remember whether All includes detected Hailo hardware
   ansible.builtin.set_fact:
     rust_maintenance_all_hailo: >-
-      {{ rust_maintenance_target == 'all' and (rust_maintenance_hardware.stdout | from_json).hailo | length > 0 }}
+      {{ rust_maintenance_target == 'all' and
+         not rust_maintenance_hailo_disabled | bool and
+         (rust_maintenance_hardware.stdout | from_json).hailo | length > 0 }}
 
 - name: Require Hailo approval and valid version before downtime
   ansible.builtin.assert:
@@ -50,10 +94,22 @@
     fail_msg: Hailo maintenance requires private firmware EULA approval and an optional exact stable 4.x version.
   when: rust_maintenance_target == 'hailo' or rust_maintenance_all_hailo | bool
 
+- name: Explicitly skip Hailo for All while safety-disabled
+  ansible.builtin.debug:
+    msg: >-
+      Hailo is deliberately skipped because the persistent safety latch is
+      active, regardless of PCI hardware or rust_telemetry_hat_enabled.
+  when:
+    - rust_maintenance_target == 'all'
+    - rust_maintenance_hailo_disabled | bool
+
 - name: Explicitly skip Hailo for All on non-HAT hosts
   ansible.builtin.debug:
     msg: All includes OS, FEX and Rust only; no Hailo PCI hardware was detected, so Hailo is skipped.
-  when: rust_maintenance_target == 'all' and not rust_maintenance_all_hailo | bool
+  when:
+    - rust_maintenance_target == 'all'
+    - not rust_maintenance_hailo_disabled | bool
+    - not rust_maintenance_all_hailo | bool
 
 - name: Validate detected Hailo host platform before downtime
   ansible.builtin.assert:

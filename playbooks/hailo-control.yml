@@ -1,0 +1,48 @@
+---
+- name: Control Hailo safety without changing Rust lifecycle
+  hosts: rust_servers
+  become: true
+  serial: 1
+  gather_facts: false
+  vars:
+    rust_hailo_control_action: status
+    rust_hailo_control_version: ''
+  tasks:
+    - name: Validate requested Hailo control action
+      ansible.builtin.assert:
+        that:
+          - rust_hailo_control_action in ['status', 'disable', 'enable_verify', 'install_while_disabled']
+          - >-
+            rust_hailo_control_action != 'install_while_disabled' or
+            rust_hailo_control_version is match('^4\.[0-9]+\.[0-9]+$')
+        fail_msg: >-
+          Choose status, disable, enable_verify, or install_while_disabled.
+          Disabled installation requires an exact stable 4.x candidate version.
+
+    - name: Install Hailo safety controller
+      ansible.builtin.copy:
+        src: '{{ playbook_dir }}/../tools/hailo_install.py'
+        dest: /usr/local/libexec/rustberrypi-hailo-install.py
+        owner: root
+        group: root
+        mode: '0750'
+
+    - name: Run explicit Hailo control action
+      ansible.builtin.command:
+        argv: >-
+          {{ ['/usr/bin/python3',
+              '/usr/local/libexec/rustberrypi-hailo-install.py',
+              '--control',
+              ('enable-verify' if rust_hailo_control_action == 'enable_verify'
+               else 'install-disabled' if rust_hailo_control_action == 'install_while_disabled'
+               else rust_hailo_control_action)] +
+             ([rust_hailo_control_version]
+              if rust_hailo_control_action == 'install_while_disabled' else []) }}
+      register: rust_hailo_control_result
+      changed_when: >-
+        rust_hailo_control_action != 'status' and
+        rust_hailo_control_result.rc == 0
+
+    - name: Report Hailo control result
+      ansible.builtin.debug:
+        msg: '{{ rust_hailo_control_result.stdout | trim }}'

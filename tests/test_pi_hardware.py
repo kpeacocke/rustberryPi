@@ -68,6 +68,17 @@ class HardwareProvisioningTests(unittest.TestCase):
     def tasks(self, path):
         return yaml.safe_load((ROOT / path).read_text())
 
+    def test_hat_provisioning_preserves_mask_until_explicit_inference_opt_in(self):
+        tasks = self.tasks('roles/rust_telemetry/tasks/hat-provision.yml')
+        unit = next(task for task in tasks if task['name'] == 'Install isolated HAT analysis unit')
+        self.assertEqual(unit['ansible.builtin.template']['dest'],
+                         '/usr/local/lib/systemd/system/rust-health-hat.service')
+        apply = next(task for task in tasks if task['name'] == 'Apply HAT analysis enablement')
+        self.assertEqual(apply['ansible.builtin.systemd_service']['masked'],
+                         '{{ not rust_telemetry_hat_enabled | bool }}')
+        legacy = next(task for task in tasks if task['name'] == 'Remove superseded regular local HAT unit')
+        self.assertIn('isreg', legacy['when'])
+
     def test_both_deployment_paths_provision_hardware_before_telemetry(self):
         for path in ('playbooks/rust.yml', 'playbooks/telemetry.yml'):
             roles = self.tasks(path)[0]['roles']
@@ -80,7 +91,7 @@ class HardwareProvisioningTests(unittest.TestCase):
                           'pi_hardware_detected.cameras | length > 0'])
 
     def test_driver_preconditions_permissions_and_no_kernel_upgrade(self):
-        tasks = self.tasks('roles/pi_hardware/tasks/hailo.yml')
+        tasks = self.tasks('roles/pi_hardware/tasks/hailo-provision.yml')
         names = [task['name'] for task in tasks]
         self.assertLess(names.index('Install DKMS before vendor driver configuration'),
                         names.index('Install minimal Hailo-8 driver and matching runtime'))
@@ -90,13 +101,30 @@ class HardwareProvisioningTests(unittest.TestCase):
         self.assertEqual(driver['ansible.builtin.apt']['name'],
                          ['hailort-pcie-driver', 'hailort', 'python3-hailort'])
         self.assertTrue(driver['ansible.builtin.apt']['fail_on_autoremove'])
-        text = (ROOT / 'roles/pi_hardware/tasks/hailo.yml').read_text()
+        text = (ROOT / 'roles/pi_hardware/tasks/hailo-provision.yml').read_text()
         self.assertNotIn('ansible.builtin.reboot', text)
         self.assertNotIn('linux-image', text)
         self.assertNotIn('upgrade:', text)
         self.assertIn("linux-headers-{{ pi_hardware_kernel.stdout | trim }}", text)
         self.assertIn('MODE="0660"', text)
         self.assertNotIn('MODE="0666"', text)
+
+    def test_persistent_safety_latch_skips_hailo_provisioning(self):
+        tasks = self.tasks('roles/pi_hardware/tasks/hailo.yml')
+        marker = next(task for task in tasks
+                      if task['name'] == 'Read persistent Hailo safety latch before provisioning')
+        self.assertEqual(marker['ansible.builtin.stat']['path'],
+                         '/var/lib/rustberrypi-hailo/disabled')
+        provision = next(task for task in tasks
+                         if task['name'] == 'Provision Hailo when not safety-disabled')
+        self.assertIn('pi_hardware_hailo_disabled.stat.exists',
+                      provision['when'])
+        self.assertIn('pi_hardware_hailo_policy.stat.exists',
+                      provision['when'])
+        skip = next(task for task in tasks
+                    if task['name'] == 'Explicitly skip Hailo provisioning while safety-disabled')
+        self.assertIn('persistent safety latch',
+                      skip['ansible.builtin.debug']['msg'])
 
     def test_camera_provisioning_enumerates_but_never_captures(self):
         tasks = self.tasks('roles/pi_hardware/tasks/camera.yml')
