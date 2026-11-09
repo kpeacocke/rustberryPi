@@ -1,0 +1,46 @@
+---
+- name: Refresh existing dashboard code without changing Rust or Hailo
+  hosts: rust_servers
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Check that telemetry is already installed
+      ansible.builtin.stat:
+        path: /opt/rustberrypi/telemetry/server.py
+      register: telemetry_refresh_installed
+
+    - name: Require an existing telemetry installation
+      ansible.builtin.assert:
+        that: telemetry_refresh_installed.stat.isreg | default(false)
+        fail_msg: Use the telemetry deployment playbook for a first installation.
+
+    - name: Refresh read-only collector code
+      ansible.builtin.copy:
+        src: '{{ playbook_dir }}/../telemetry/server.py'
+        dest: /opt/rustberrypi/telemetry/server.py
+        owner: root
+        group: root
+        mode: '0644'
+        validate: /usr/bin/python3 -m py_compile %s
+      notify: Restart dashboard collector
+
+    - name: Refresh dashboard assets
+      ansible.builtin.copy:
+        src: '{{ playbook_dir }}/../dashboard/'
+        dest: /opt/rustberrypi/dashboard/
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Apply collector code before refreshing evidence
+      ansible.builtin.meta: flush_handlers
+
+    - name: Refresh scheduled maintenance probes and readiness evidence
+      ansible.builtin.include_role:
+        name: rust_maintenance_refresh
+
+  handlers:
+    - name: Restart dashboard collector
+      ansible.builtin.systemd_service:
+        name: rust-telemetry.service
+        state: restarted

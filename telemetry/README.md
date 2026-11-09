@@ -50,6 +50,13 @@ Neither the dashboard nor EDA installs the driver.
 
 Use your existing private inventory, identity and pins. On the Pi:
 
+For an existing installation, refresh collector/assets and maintenance evidence
+with `ansible-playbook playbooks/telemetry-refresh.yml` using your usual
+connection and become options. This restarts only the dashboard collector;
+it does not reconfigure/restart Rust, provision HAT hardware, or activate a
+Hailo driver. A failed evidence refresh leaves the code installed and reports
+the failed probe instead of claiming an upgrade succeeded.
+
 When upgrading from an older dashboard installation, first run the full
 `playbooks/rust.yml` with `rust_telemetry_enabled=true` to install the managed
 startup helper. This fixes a missing local RCON listener by passing its settings
