@@ -488,8 +488,7 @@ class HailoCandidateIntegrityTests(unittest.TestCase):
             driver = root / "driver"
             for relative in (
                 "linux/pcie/dkms.conf.in",
-                "common/include",
-                "common/src",
+                "common",
                 "linux/vdma",
                 "linux/utils",
             ):
@@ -512,13 +511,33 @@ class HailoCandidateIntegrityTests(unittest.TestCase):
                 ).is_file()
             )
             self.assertTrue(
-                (installed / "hailort/drivers/common/src/source.c").is_file()
+                (installed / "hailort/drivers/common/source.c").is_file()
             )
-            self.assertTrue((installed / "common/include/source.c").is_file())
+            self.assertFalse((installed / "common/include").exists())
             self.assertIn(
                 "PACKAGE_VERSION=4.24.0",
                 (installed / "dkms.conf").read_text(),
             )
+
+    def test_dkms_source_copy_failure_removes_only_its_new_source_tree(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            driver = root / "driver"
+            for relative in ("linux/pcie", "common", "linux/vdma", "linux/utils"):
+                (driver / relative).mkdir(parents=True)
+            (driver / "linux/pcie/dkms.conf.in").write_text(
+                "PACKAGE_VERSION=@PCIE_DRIVER_VERSION@\n"
+            )
+            source_root = root / "usr-src"
+            existing = source_root / "hailo_pci-4.23.0"
+            existing.mkdir(parents=True)
+            (existing / "dkms.conf").write_text("old source")
+            with patch.object(
+                installer.shutil, "copytree", side_effect=OSError("copy failed")
+            ), self.assertRaisesRegex(OSError, "copy failed"):
+                installer.copy_dkms_source(driver, "4.24.0", source_root)
+            self.assertFalse((source_root / "hailo_pci-4.24.0").exists())
+            self.assertEqual((existing / "dkms.conf").read_text(), "old source")
 
     def test_rollback_restores_only_hailo_package_hold_changes(self):
         with patch.object(
@@ -1007,6 +1026,11 @@ class HailoSafetyControlTests(unittest.TestCase):
             verify.assert_not_called()
 
     def test_disabled_install_rollback_never_unblocks_or_identifies_hardware(self):
+        for registered in (True, False):
+            with self.subTest(registered=registered):
+                self._assert_disabled_install_rollback(registered)
+
+    def _assert_disabled_install_rollback(self, registered):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             candidate_path = root / "candidates/4.24.0"
@@ -1043,7 +1067,7 @@ class HailoSafetyControlTests(unittest.TestCase):
                     dkms_status_calls += 1
                     output = (
                         "hailo_pci/4.24.0"
-                        if dkms_status_calls > 1
+                        if dkms_status_calls > 1 and registered
                         else ""
                     )
                 else:
@@ -1076,7 +1100,9 @@ class HailoSafetyControlTests(unittest.TestCase):
                     )), \
                     patch.object(installer, "current_target", return_value=None), \
                     patch.object(installer, "module_loaded", return_value=False), \
-                    patch.object(installer, "copy_dkms_source"), \
+                    patch.object(installer, "copy_dkms_source", side_effect=lambda *_: (
+                        root / "usr/src/hailo_pci-4.24.0"
+                    ).mkdir()), \
                     patch.object(installer, "atomic_link"), \
                     patch.object(installer, "validate_runtime",
                                  side_effect=subprocess.CalledProcessError(
@@ -1094,6 +1120,7 @@ class HailoSafetyControlTests(unittest.TestCase):
             self.assertEqual(disabled_marker.read_text(), "disabled\n")
             self.assertEqual(policy.read_text(), installer.DISABLED_POLICY)
             self.assertFalse((root / "active-version").exists())
+            self.assertFalse((root / "usr/src/hailo_pci-4.24.0").exists())
             self.assertFalse(any(
                 command[:2] == ["modprobe", installer.MODULE]
                 or command[:3] == ["hailortcli", "fw-control", "identify"]

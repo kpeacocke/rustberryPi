@@ -873,7 +873,6 @@ def copy_dkms_source(driver, version, source_root=Path("/usr/src")):
             "DKMS source path already exists; inspect before activation: "
             f"{source}"
         )
-    source.mkdir(parents=True)
     mappings = [
         (
             driver / "linux" / "pcie",
@@ -888,15 +887,27 @@ def copy_dkms_source(driver, version, source_root=Path("/usr/src")):
             driver / "linux" / "utils",
             source / "hailort" / "drivers" / "linux" / "utils",
         ),
-        (driver / "common" / "include", source / "common" / "include"),
     ]
-    for origin, destination in mappings:
-        shutil.copytree(origin, destination, symlinks=True)
+    # Standalone releases keep driver headers directly in common.
+    if (driver / "common" / "include").is_dir():
+        mappings.append(
+            (driver / "common" / "include", source / "common" / "include")
+        )
+    for origin, _ in mappings:
+        if not origin.is_dir():
+            raise FileNotFoundError(f"Required DKMS source directory missing: {origin}")
     template = (driver / "linux" / "pcie" / "dkms.conf.in").read_text(
         encoding="utf-8"
     )
     config = template.replace("@PCIE_DRIVER_VERSION@", version)
-    (source / "dkms.conf").write_text(config, encoding="utf-8")
+    source.mkdir(parents=True)
+    try:
+        for origin, destination in mappings:
+            shutil.copytree(origin, destination, symlinks=True)
+        (source / "dkms.conf").write_text(config, encoding="utf-8")
+    except OSError:
+        shutil.rmtree(source)
+        raise
     return source
 
 
@@ -1215,8 +1226,8 @@ def activate(root, version, disabled_install=False):
                         "--all",
                     ]
                 )
-                if candidate_dkms_source.exists():
-                    shutil.rmtree(candidate_dkms_source)
+            if candidate_dkms_source.exists():
+                shutil.rmtree(candidate_dkms_source)
             if old_module_version:
                 run(
                     [
