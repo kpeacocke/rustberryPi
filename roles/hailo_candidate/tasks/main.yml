@@ -56,6 +56,22 @@
     group: root
     mode: '0750'
 
+- name: Create public operational status directory
+  ansible.builtin.file:
+    path: /var/lib/rustberrypi
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Withdraw cached readiness while checking or rebuilding candidates
+  ansible.builtin.copy:
+    content: '{"ok": false, "error": "Candidate check/build in progress or failed; inspect the candidate job"}'
+    dest: /var/lib/rustberrypi/hailo.json
+    owner: root
+    group: root
+    mode: '0644'
+
 - name: Check for and build the newest common stable Hailo-8 candidate
   ansible.builtin.command:
     argv:
@@ -72,6 +88,28 @@
   async: 21600
   poll: 30
   changed_when: "'Built private Hailo' in hailo_candidate_build.stdout"
+
+- name: Install read-only candidate readiness validator
+  ansible.builtin.copy:
+    src: '{{ playbook_dir }}/../tools/hailo_install.py'
+    dest: /usr/local/libexec/rustberrypi-hailo-install.py
+    owner: root
+    group: root
+    mode: '0750'
+
+- name: Validate candidate readiness without installing the driver
+  ansible.builtin.command:
+    argv: [/usr/bin/python3, /usr/local/libexec/rustberrypi-hailo-install.py, --status]
+  register: hailo_candidate_status
+  changed_when: false
+
+- name: Publish validated candidate readiness for the dashboard
+  ansible.builtin.copy:
+    content: '{{ hailo_candidate_status.stdout }}'
+    dest: /var/lib/rustberrypi/hailo.json
+    owner: root
+    group: root
+    mode: '0644'
 
 - name: Report candidate-only result
   ansible.builtin.debug:

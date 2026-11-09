@@ -1,5 +1,6 @@
 """Maintenance probes may refresh indexes, but never install or stop the game."""
 import importlib.util
+import io
 import json
 from pathlib import Path
 import sys
@@ -16,6 +17,39 @@ with patch.dict(sys.modules, {'apt': MagicMock(), 'steam_manage': MagicMock()}):
 
 
 class MaintenanceTests(unittest.TestCase):
+    def test_hailo_probe_only_runs_read_only_validator(self):
+        with patch.object(maintenance.subprocess, 'check_output',
+                          return_value='{"candidate_ready": true, "available": "4.24.0"}') as command:
+            result = maintenance.check_hailo()
+        self.assertTrue(result['candidate_ready'])
+        self.assertEqual(command.call_args.args[0],
+                         ['/usr/bin/python3', '/usr/local/libexec/rustberrypi-hailo-install.py', '--status'])
+        with patch.object(maintenance.subprocess, 'check_output', side_effect=FileNotFoundError):
+            with self.assertRaises(FileNotFoundError):
+                maintenance.check_hailo()
+
+    def test_latest_fex_inputs_resolve_release_tag_not_target_branch(self):
+        release = {'tag_name': 'FEX-2611', 'published_at': '2026-11-01T00:00:00Z',
+                   'target_commitish': 'main'}
+        responses = [io.StringIO(json.dumps(release)),
+                     io.StringIO(json.dumps({'sha': 'a' * 40}))]
+        with patch.object(maintenance.urllib.request, 'urlopen', side_effect=responses) as request:
+            result = maintenance.check_fex({})
+        self.assertEqual(result, {'latest_release': 'FEX-2611', 'published_at': release['published_at'],
+                                  'latest_commit': 'a' * 40})
+        self.assertEqual(request.call_args_list[1].args[0].full_url,
+                         'https://api.github.com/repos/FEX-Emu/FEX/commits/FEX-2611')
+
+    def test_latest_fex_inputs_refuse_invalid_tag_or_unresolved_commit(self):
+        for tag, commit in [('main/other', 'a' * 40), ('FEX-2611', 'main'),
+                            ('FEX-2611', 'a' * 39)]:
+            with self.subTest(tag=tag, commit=commit):
+                responses = [io.StringIO(json.dumps({'tag_name': tag, 'published_at': 'today'})),
+                             io.StringIO(json.dumps({'sha': commit}))]
+                with patch.object(maintenance.urllib.request, 'urlopen', side_effect=responses):
+                    with self.assertRaises(ValueError):
+                        maintenance.check_fex({})
+
     def test_installed_fex_is_read_from_selected_binary_not_configured_label(self):
         with patch.object(maintenance.subprocess, 'check_output', return_value='FEX-2610\n') as command:
             result = maintenance.check_fex_installed({
@@ -47,6 +81,7 @@ class MaintenanceTests(unittest.TestCase):
                     patch.object(maintenance, 'check_packages', return_value={}), \
                     patch.object(maintenance, 'check_rust', return_value={}), \
                     patch.object(maintenance, 'check_fex', side_effect=OSError('offline')), \
+                    patch.object(maintenance, 'check_hailo', return_value={'candidate_ready': False}), \
                     patch.object(maintenance.subprocess, 'check_output', return_value=''):
                 maintenance.main()
             result = json.loads((root / 'maintenance.json').read_text())

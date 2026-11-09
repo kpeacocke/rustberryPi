@@ -12,7 +12,7 @@
     argv:
       - /usr/bin/python3
       - /usr/local/libexec/rustberrypi-hailo-install.py
-      - '{{ rust_maintenance_hailo_version }}'
+      - '{{ rust_maintenance_hailo_selected_version }}'
   register: rust_maintenance_hailo_install
   changed_when: rust_maintenance_hailo_install.rc == 0
   failed_when: rust_maintenance_hailo_install.rc not in [0, 10]

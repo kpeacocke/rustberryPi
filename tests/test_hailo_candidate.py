@@ -1,5 +1,6 @@
 """Hailo release selection, candidate integrity and DKMS layout checks."""
 
+import asyncio
 import hashlib
 import importlib.util
 import json
@@ -23,6 +24,43 @@ def load_module(name, path):
 
 candidate = load_module("hailo_candidate", "tools/hailo_candidate.py")
 installer = load_module("hailo_install", "tools/hailo_install.py")
+release_source = load_module(
+    "hailo_release_source",
+    "extensions/eda/plugins/event_source/hailo_release.py",
+)
+
+
+class HailoEventSourceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_event_source_emits_release_without_installation(self):
+        queue = asyncio.Queue()
+        with patch.object(
+            release_source, "release_version", return_value="4.24.0"
+        ), patch.object(
+            release_source.asyncio, "sleep", side_effect=asyncio.CancelledError
+        ):
+            with self.assertRaises(asyncio.CancelledError):
+                await release_source.main(queue, {"poll_interval": 3600})
+        self.assertEqual(
+            queue.get_nowait(), {"hailo_release": {"version": "4.24.0"}}
+        )
+        rule = yaml.safe_load(
+            (ROOT / "rulebooks/hailo-candidate.yml").read_text()
+        )[0]
+        self.assertEqual(
+            rule["rules"][0]["action"]["run_job_template"]["name"],
+            "RustberryPi - Hailo candidate",
+        )
+
+    async def test_failed_release_check_never_emits_available_event(self):
+        queue = asyncio.Queue()
+        with patch.object(
+            release_source, "release_version", side_effect=RuntimeError("API")
+        ), patch.object(
+            release_source.asyncio, "sleep", side_effect=asyncio.CancelledError
+        ), self.assertLogs(level="ERROR"):
+            with self.assertRaises(asyncio.CancelledError):
+                await release_source.main(queue, {})
+        self.assertTrue(queue.empty())
 
 
 class HailoReleaseTests(unittest.TestCase):
@@ -56,8 +94,102 @@ class HailoReleaseTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "fixed at"):
                 candidate.build_candidate(Path(directory), "4.24.0", True)
 
+    def test_runtime_configures_from_upstream_repository_root(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            with patch.object(candidate, "ROOT_DEFAULT", root), patch.object(
+                candidate.os, "geteuid", return_value=0
+            ), patch.object(
+                candidate.platform, "machine", return_value="aarch64"
+            ), patch.object(
+                Path, "is_file", lambda path: path.name == "Makefile"
+            ), patch.object(
+                candidate, "clone_repository"
+            ), patch.object(
+                candidate, "run", side_effect=RuntimeError("configure probe")
+            ) as command:
+                with self.assertRaisesRegex(RuntimeError, "configure probe"):
+                    candidate.build_candidate(root, "4.24.0", True)
+            argv = command.call_args.args[0]
+            self.assertEqual(
+                argv[argv.index("-S") + 1],
+                str(root / "candidates/4.24.0/source/hailort"),
+            )
+
+    def test_ready_candidate_for_old_kernel_is_rebuilt(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            path = root / "candidates/4.24.0"
+            path.mkdir(parents=True)
+            (path / "READY").touch()
+            (path / "manifest.json").write_text(json.dumps({
+                "architecture": "aarch64", "kernel_release": "older-kernel",
+            }))
+            is_file = Path.is_file
+            with patch.object(candidate, "ROOT_DEFAULT", root), \
+                    patch.object(candidate.os, "geteuid", return_value=0), \
+                    patch.object(candidate.platform, "machine", return_value="aarch64"), \
+                    patch.object(Path, "is_file", lambda p: p.name == "Makefile" or is_file(p)), \
+                    patch.object(candidate, "clone_repository"), \
+                    patch.object(candidate, "run", side_effect=RuntimeError("build reached")):
+                with self.assertRaisesRegex(RuntimeError, "build reached"):
+                    candidate.build_candidate(root, "4.24.0", True)
+            self.assertFalse((path / "READY").exists())
+
 
 class HailoCandidateIntegrityTests(unittest.TestCase):
+    def test_selection_requires_newer_candidate_for_running_kernel(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for version in ("4.24.0", "4.25.0"):
+                path = root / "candidates" / version
+                path.mkdir(parents=True)
+                (path / "READY").touch()
+
+            def verify(storage, version):
+                return storage / "candidates" / version, {
+                    "architecture": "aarch64",
+                    "kernel_release": (
+                        "older-kernel"
+                        if version == "4.25.0"
+                        else candidate.os.uname().release
+                    ),
+                }
+
+            with patch.object(
+                installer, "verify_candidate", side_effect=verify
+            ), patch.object(
+                installer,
+                "run",
+                return_value=SimpleNamespace(returncode=0, stdout="4.23.0"),
+            ):
+                self.assertEqual(installer.select_candidate(root), "4.24.0")
+                with self.assertRaisesRegex(ValueError, "running kernel"):
+                    installer.select_candidate(root, "4.25.0")
+
+    def test_selection_rejects_missing_or_already_installed_candidates(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+            installer,
+            "run",
+            return_value=SimpleNamespace(returncode=0, stdout="4.24.0"),
+        ):
+            root = Path(directory)
+            with self.assertRaisesRegex(ValueError, "No ready"):
+                installer.select_candidate(root)
+            with patch.object(
+                installer,
+                "verify_candidate",
+                return_value=(
+                    root,
+                    {
+                        "architecture": "aarch64",
+                        "kernel_release": candidate.os.uname().release,
+                    },
+                ),
+            ):
+                with self.assertRaisesRegex(ValueError, "newer"):
+                    installer.select_candidate(root, "4.24.0")
+
     def make_candidate(self, root, version="4.24.0"):
         path = root / "candidates" / version
         files = {
@@ -83,6 +215,8 @@ class HailoCandidateIntegrityTests(unittest.TestCase):
             json.dumps(
                 {
                     "version": version,
+                    "architecture": "aarch64",
+                    "kernel_release": candidate.os.uname().release,
                     "candidate_only": True,
                     "firmware_eula_accepted": True,
                     "firmware_url": (
@@ -98,6 +232,36 @@ class HailoCandidateIntegrityTests(unittest.TestCase):
             )
         )
         return path
+
+    def test_status_requires_integrity_not_just_ready_marker(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = self.make_candidate(root)
+
+            def command(argv, **kwargs):
+                return SimpleNamespace(
+                    returncode=0, stdout="4.23.0" if argv[0] == "modinfo" else "a" * 40)
+
+            with patch.object(installer, "run", side_effect=command):
+                status = installer.candidate_status(root)
+                self.assertTrue(status["candidate_ready"])
+                self.assertEqual(status["available"], "4.24.0")
+                (path / "firmware/hailo8_fw.bin").write_bytes(b"corrupt")
+                with self.assertRaisesRegex(ValueError, "checksum mismatch"):
+                    installer.candidate_status(root)
+
+    def test_no_candidate_is_distinct_from_failed_installed_probe(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with patch.object(installer, "run",
+                              return_value=SimpleNamespace(returncode=0, stdout="4.23.0")):
+                status = installer.candidate_status(root)
+                self.assertFalse(status["candidate_ready"])
+                self.assertIsNone(status["available"])
+            with patch.object(installer, "run",
+                              return_value=SimpleNamespace(returncode=1, stdout="")):
+                with self.assertRaisesRegex(RuntimeError, "installed"):
+                    installer.candidate_status(root)
 
     def test_candidate_manifest_and_hashes_are_required(self):
         with tempfile.TemporaryDirectory() as directory:

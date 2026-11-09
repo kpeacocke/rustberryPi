@@ -20,6 +20,26 @@ with patch.dict(sys.modules, {'psutil': MagicMock(), 'websocket': MagicMock()}):
 
 
 class TelemetryTests(unittest.TestCase):
+    def test_hailo_alert_requires_fresh_successful_validation(self):
+        status = {'ok': True, 'candidate_ready': True, 'checked_at': time.time()}
+        for overrides, ready in [({}, True), ({'ok': False}, False),
+                                 ({'candidate_ready': False}, False), ({'checked_at': 1}, False)]:
+            with self.subTest(overrides=overrides):
+                items = server.suggestions({'maintenance': {'hailo': dict(status, **overrides)}})
+                self.assertEqual(any(item['title'] == 'Hailo candidate ready to deploy'
+                                     for item in items), ready)
+
+    def test_kernel_change_or_corrupt_status_cannot_claim_hailo_ready(self):
+        with patch.object(server, 'read_document', return_value={
+                'ok': True, 'candidate_ready': True, 'kernel_release': 'older-kernel'}):
+            result = server.hailo_status()
+        self.assertFalse(result['ok'])
+        self.assertIn('Kernel changed', result['error'])
+        with patch.object(server, 'read_document', side_effect=ValueError('corrupt')):
+            result = server.hailo_status()
+        self.assertFalse(result['ok'])
+        self.assertIn('unavailable', result['error'])
+
     def test_collector_wires_advisory_analysis_and_numeric_worker_sample(self):
         with tempfile.TemporaryDirectory() as folder:
             collector = server.Collector({'password_file': '/not-read', 'show_names': False,

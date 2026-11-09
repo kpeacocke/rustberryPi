@@ -101,6 +101,14 @@
   loop: [server.py, maintenance.py, health.py, hat.py]
   notify: [Restart telemetry, Restart HAT analysis]
 
+- name: Install read-only Hailo candidate readiness validator
+  ansible.builtin.copy:
+    src: '{{ playbook_dir }}/../tools/hailo_install.py'
+    dest: /usr/local/libexec/rustberrypi-hailo-install.py
+    owner: root
+    group: root
+    mode: '0750'
+
 - name: Install dashboard assets
   ansible.builtin.copy:
     src: "{{ playbook_dir }}/../dashboard/"

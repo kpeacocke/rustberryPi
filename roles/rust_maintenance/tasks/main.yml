@@ -10,7 +10,8 @@
       - ansible_facts['distribution'] == 'Debian'
       - >-
         rust_maintenance_target != 'hailo' or
-        (rust_maintenance_hailo_version is match('^4\.[0-9]+\.[0-9]+$') and
+        ((rust_maintenance_hailo_version == '' or
+          rust_maintenance_hailo_version is match('^4\.[0-9]+\.[0-9]+$')) and
         rust_maintenance_hailo_firmware_eula_accepted | bool)
       - >-
         rust_maintenance_target not in ['os', 'os-rust', 'all'] or not rust_maintenance_os_reboot | bool
@@ -21,13 +22,36 @@
         rust_maintenance_fex_version is match('^[A-Za-z0-9._-]+$'))
     fail_msg: >-
       Choose os, fex, rust, os-rust, all or hailo. FEX requires an explicit commit and version.
-      Hailo requires an exact built candidate version and the private firmware EULA
+      Hailo requires a ready local candidate and the private firmware EULA
       acceptance host variable. Rebooting OS jobs require an SSH controller;
       local jobs must set rust_maintenance_os_reboot=false.
 
+- name: Install candidate validator before announcing downtime
+  ansible.builtin.copy:
+    src: '{{ playbook_dir }}/../tools/hailo_install.py'
+    dest: /usr/local/libexec/rustberrypi-hailo-install.py
+    owner: root
+    group: root
+    mode: '0750'
+  when: rust_maintenance_target == 'hailo'
+
+- name: Select and validate a ready Hailo candidate before downtime
+  ansible.builtin.command:
+    argv: >-
+      {{ ['/usr/bin/python3', '/usr/local/libexec/rustberrypi-hailo-install.py', '--select'] +
+         ([rust_maintenance_hailo_version] if rust_maintenance_hailo_version | length > 0 else []) }}
+  register: rust_maintenance_hailo_selection
+  changed_when: false
+  when: rust_maintenance_target == 'hailo'
+
+- name: Remember the exact validated candidate for this maintenance window
+  ansible.builtin.set_fact:
+    rust_maintenance_hailo_selected_version: '{{ rust_maintenance_hailo_selection.stdout | trim }}'
+  when: rust_maintenance_target == 'hailo'
+
 - name: Verify approved Hailo candidate exists before downtime
   ansible.builtin.stat:
-    path: '/var/lib/rustberrypi-hailo/candidates/{{ rust_maintenance_hailo_version }}/READY'
+    path: '/var/lib/rustberrypi-hailo/candidates/{{ rust_maintenance_hailo_selected_version }}/READY'
   register: rust_maintenance_hailo_candidate
   when: rust_maintenance_target == 'hailo'
 

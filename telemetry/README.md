@@ -23,6 +23,29 @@ Checks can take several minutes. Failed checks retain earlier values but mark
 them failed; their previous success timestamp remains visible. A reboot marker's
 absence does not prove that no reboot is necessary.
 
+The Health & Maintenance FEX card shows the installed runtime and latest upstream
+release. Expand **Optional AWX inputs** to view or copy
+`rust_maintenance_fex_version` and `rust_maintenance_fex_commit` for the latest
+release only. The commit is resolved from its release tag, not a moving
+target branch; latest does not mean Pi-validated. Failed/stale release checks
+disable the copy option. Copying does not launch,
+select, install or approve an upgrade. Paste the individual values into the
+FEX/All AWX survey only if you choose that target, and maintain the corresponding
+private deployment pins as described in the [maintenance guide](../maintenance/README.md).
+Redeploy telemetry and refresh maintenance checks to populate these new fields;
+no AWX survey change is required.
+
+The **Hailo driver candidate** card offers copyable
+`rust_maintenance_hailo_version` only for a newer, integrity-verified candidate
+matching the running kernel. It also raises a **Needs attention** suggestion.
+Candidate builds publish non-sensitive readiness immediately to
+`/var/lib/rustberrypi/hailo.json`; scheduled maintenance checks revalidate it.
+Failed checks, evidence older than 24 hours, a kernel change, or a build in
+progress suppress readiness and copying. This is candidate readiness, not proof
+of hardware compatibility after installation. Launch **Hailo maintenance**
+manually only when Rust is healthy; the job repeats validation before downtime.
+Neither the dashboard nor EDA installs the driver.
+
 ## Deploy
 
 Use your existing private inventory, identity and pins. On the Pi:

@@ -44,8 +44,8 @@
       "max": 100
     },
     {
-      "question_name": "Hailo candidate version (required for hailo)",
-      "question_description": "Exact stable version already built on the Pi; activation is explicit and separately approved.",
+      "question_name": "Hailo candidate version (optional override)",
+      "question_description": "For hailo, leave blank to select the newest ready local candidate matching the running kernel. No candidate means failure before downtime. Or enter an exact built version without v.",
       "required": false,
       "type": "text",
       "variable": "rust_maintenance_hailo_version",

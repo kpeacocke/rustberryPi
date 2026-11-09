@@ -8,4 +8,5 @@
 .touch .health-summary{display:flex;align-items:center;flex-wrap:wrap;gap:4px 14px;padding:6px 12px;font-size:14px}.touch .health-summary h2{margin:0;font-size:13px}.touch .health-summary .sub{margin:0}
 .touch .card:not(.health-card):not(.player-history){padding-top:14px;padding-bottom:14px}.touch footer{margin-top:16px}
 .system .card{padding-top:18px;padding-bottom:18px}.system .health-card{max-height:340px;overflow:auto}.system .list{max-height:280px}
+.fex-inputs{margin-top:12px;font-size:14px}.fex-inputs summary{cursor:pointer;color:var(--mint)}.fex-inputs pre{white-space:pre-wrap;overflow-wrap:anywhere;user-select:text}.fex-inputs button{font:inherit;color:var(--text);background:#223b32;border:1px solid var(--mint);border-radius:8px;padding:8px 12px;cursor:pointer}.fex-inputs [role=status]{display:block}
 @media(min-width:801px){.touch .history-grid{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}.game .history-grid{grid-template-columns:repeat(2,minmax(0,1fr));column-gap:18px}}

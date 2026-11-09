@@ -1,0 +1,13 @@
+---
+- name: Build candidates for newly published stable Hailo-8 releases
+  hosts: all
+  sources:
+    - rustberrypi.hailo.hailo_release:
+        poll_interval: 3600
+  rules:
+    - name: Check the Pi and build only a missing newer candidate
+      condition: event.hailo_release.version is defined
+      action:
+        run_job_template:
+          name: RustberryPi - Hailo candidate
+          organization: '{{ awx_organization }}'

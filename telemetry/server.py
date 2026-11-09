@@ -5,6 +5,7 @@ from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import logging
+import os
 from pathlib import Path
 import socket
 import subprocess
@@ -168,6 +169,11 @@ def suggestions(data):
         items.append(('review', 'Rust update available', 'Back up and schedule downtime; check connected players first.'))
     if maintenance.get('reboot_required'):
         items.append(('review', 'OS requests a reboot', 'Schedule a reboot and verify the server returns.'))
+    hailo = maintenance.get('hailo', {})
+    if (hailo.get('ok') and hailo.get('candidate_ready') is True
+            and time.time() - hailo.get('checked_at', 0) <= 86400):
+        items.append(('review', 'Hailo candidate ready to deploy',
+                      'Run Hailo maintenance manually when Rust is healthy; nothing has been installed.'))
     backup = maintenance.get('backup', {})
     if backup.get('recovery_ok') is False:
         items.append(('urgent', 'Rust recovery after backup failed', 'The archive may be valid; inspect Rust startup and the watchdog.'))
@@ -184,6 +190,16 @@ def suggestions(data):
         items.append(('review', 'No restore success recorded', 'Test recovery on a spare system; do not overwrite the live world.'))
     return sorted([{'severity': a, 'title': b, 'detail': c} for a, b, c in items],
                   key=lambda item: item['severity'] != 'urgent')
+
+
+def hailo_status():
+    try:
+        status = read_document('/var/lib/rustberrypi/hailo.json')
+    except (OSError, ValueError):
+        return {'ok': False, 'error': 'Hailo readiness evidence unavailable; refresh maintenance checks'}
+    if status.get('ok') and status.get('kernel_release') != os.uname().release:
+        status.update(ok=False, error='Kernel changed; rebuild and validate the candidate for this kernel')
+    return status
 
 
 FEATURE_SCHEMA = 1
@@ -465,6 +481,7 @@ class Collector:
             maintenance = json.loads(Path('/var/lib/rustberrypi/maintenance.json').read_text())
         except (OSError, ValueError):
             pass
+        maintenance['hailo'] = hailo_status()
         try:
             maintenance['backup'] = json.loads(Path('/var/lib/rustberrypi-backup.json').read_text())
         except (OSError, ValueError):

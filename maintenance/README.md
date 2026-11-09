@@ -65,13 +65,27 @@ firmware terms yourself and set the private AWX **host** variable
 the playbook fails closed until that private approval is present. Do not set
 this value in a survey, shared group variables or public files.
 
-Create an AWX job template for `playbooks/hailo-candidate.yml` and schedule it
-daily or weekly at a quiet time. It builds only when a newer common 4.x tag is
+Create an AWX job template for `playbooks/hailo-candidate.yml`. The EDA
+[`rulebooks/hailo-candidate.yml`](../rulebooks/hailo-candidate.yml) can trigger
+candidate builds on stable common release changes; configure its project,
+decision environment, controller credential and activation as described in
+the [AWX guide](../awx/README.md#event-driven-hailo-builds).
+Alternatively schedule the candidate job daily or weekly at a quiet time.
+It builds only when a newer common 4.x tag is
 available; it never changes the active driver. To install, launch
 `playbooks/maintenance-hailo.yml` with its dedicated
 [`awx/hailo-maintenance-survey.json`](../awx/hailo-maintenance-survey.json)
 imported and enabled (or select `hailo` in the selectable maintenance survey)
-and enter the exact candidate version. That job requires the same mounted NAS
+and leave the version blank to select the newest ready, newer candidate for
+the running kernel, or enter an exact version override. Candidate hashes,
+source commits, architecture, kernel and installed-driver comparison are checked
+before downtime; absence of an eligible candidate fails without stopping Rust.
+The Health & Maintenance dashboard shows only fresh, validated readiness and
+offers optional copy inputs for the manual Hailo maintenance job. Its candidate
+build invalidates cached readiness before work and republishes it only after
+validation succeeds. `sudo /usr/local/libexec/rustberrypi-hailo-install.py --status`
+prints the same read-only readiness JSON; it never activates a driver.
+That job requires the same mounted NAS
 backup and running Rust server as other maintenance. It stops the HAT worker,
 checks candidate hashes and kernel match, installs the driver through DKMS,
 switches the versioned runtime, and tests `hailortcli fw-control identify`.

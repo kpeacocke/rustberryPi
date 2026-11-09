@@ -178,8 +178,12 @@ def build_candidate(root, version, firmware_eula_accepted):
             f"Candidate path must not be a symlink: {candidate}"
         )
     if (candidate / "READY").is_file():
-        print(f"Hailo {version} candidate already exists; no changes made.")
-        return
+        manifest = json.loads((candidate / "manifest.json").read_text())
+        if (manifest.get("kernel_release") == kernel
+                and manifest.get("architecture") == platform.machine()):
+            print(f"Hailo {version} candidate already exists; no changes made.")
+            return
+        print(f"Hailo {version} candidate targets an older kernel; rebuilding.")
     if candidate.exists():
         shutil.rmtree(candidate)
     candidate.mkdir(mode=0o755)
@@ -201,7 +205,7 @@ def build_candidate(root, version, firmware_eula_accepted):
         [
             "cmake",
             "-S",
-            str(sources / "hailort" / "hailort"),
+            str(sources / "hailort"),
             "-B",
             str(runtime_build),
             "-DCMAKE_BUILD_TYPE=Release",
@@ -262,9 +266,14 @@ def build_candidate(root, version, firmware_eula_accepted):
             "-m",
             "pip",
             "install",
-            "--no-deps",
             str(wheels[0]),
         ]
+    )
+    run(
+        [str(venv / "bin" / "python"), "-c",
+         "import hailo_platform; import importlib.metadata; "
+         f"assert importlib.metadata.version('hailort') == '{version}'"],
+        env=dict(python_env, LD_LIBRARY_PATH=str(runtime / "lib")),
     )
 
     driver_source = sources / "driver"

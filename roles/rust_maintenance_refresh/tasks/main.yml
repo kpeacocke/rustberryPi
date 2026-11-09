@@ -1,4 +1,12 @@
 ---
+- name: Install current Hailo candidate readiness validator
+  ansible.builtin.copy:
+    src: '{{ playbook_dir }}/../tools/hailo_install.py'
+    dest: /usr/local/libexec/rustberrypi-hailo-install.py
+    owner: root
+    group: root
+    mode: '0750'
+
 - name: Install current dashboard maintenance probes
   ansible.builtin.copy:
     src: '{{ playbook_dir }}/../telemetry/maintenance.py'

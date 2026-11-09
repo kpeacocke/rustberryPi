@@ -4,6 +4,7 @@ import fcntl
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import time
@@ -56,7 +57,31 @@ def check_fex(config):
                                  headers={'User-Agent': 'rustberryPi-maintenance'})
     with urllib.request.urlopen(req, timeout=15) as response:
         release = json.load(response)
-    return {'latest_release': release['tag_name'], 'published_at': release['published_at']}
+    tag = release['tag_name']
+    if not re.fullmatch(r'FEX-[A-Za-z0-9._-]+', tag):
+        raise ValueError('Invalid FEX release tag')
+    # Resolve the tag itself; target_commitish can be a moving branch, not the release commit.
+    req = urllib.request.Request('https://api.github.com/repos/FEX-Emu/FEX/commits/' + tag,
+                                 headers={'User-Agent': 'rustberryPi-maintenance'})
+    with urllib.request.urlopen(req, timeout=15) as response:
+        commit = json.load(response)['sha']
+    if not re.fullmatch(r'[a-f0-9]{40}', commit):
+        raise ValueError('Invalid FEX release commit')
+    return {'latest_release': tag, 'published_at': release['published_at'], 'latest_commit': commit}
+
+
+def check_hailo():
+    output = subprocess.check_output(
+        ['/usr/bin/python3', '/usr/local/libexec/rustberrypi-hailo-install.py', '--status'],
+        text=True, timeout=120)
+    return json.loads(output)
+
+
+def write_json(path, result):
+    temporary = path.with_suffix('.tmp')
+    temporary.write_text(json.dumps(result))
+    temporary.chmod(0o644)
+    temporary.replace(path)
 
 
 def main():
@@ -69,13 +94,14 @@ def main():
     # Keep earlier successful values but mark failed probes as failed/stale.
     for name, fn in [('fex_installed', lambda: check_fex_installed(config)),
                      ('packages', check_packages), ('rust', lambda: check_rust(config)),
-                     ('fex', lambda: check_fex(config))]:
+                     ('fex', lambda: check_fex(config)), ('hailo', check_hailo)]:
         now = time.time()
         try:
             result[name] = dict(fn(), ok=True, checked_at=now, attempted_at=now)
         except Exception as error:
             print(name + ' check failed: ' + type(error).__name__, flush=True)
             result.setdefault(name, {}).update(ok=False, attempted_at=now, error='Check failed; inspect probe environment/connectivity')
+    write_json(Path('/var/lib/rustberrypi/hailo.json'), result['hailo'])
     # Keep already-open dashboards compatible without presenting the configured pin as installed.
     result['fex']['installed_pin'] = (
         result['fex_installed']['version'] if result['fex_installed']['ok'] else None)
@@ -98,10 +124,7 @@ def main():
     except Exception:
         result['journal'] = {'error': 'Journal check unavailable'}
     result['checked_at'] = time.time()
-    temporary = path.with_suffix('.tmp')
-    temporary.write_text(json.dumps(result))
-    temporary.chmod(0o644)
-    temporary.replace(path)
+    write_json(path, result)
 
 
 if __name__ == '__main__':

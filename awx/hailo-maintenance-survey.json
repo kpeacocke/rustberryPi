@@ -4,12 +4,12 @@
   "spec": [
     {
       "question_name": "Hailo candidate version",
-      "question_description": "Exact stable 4.x version reported by the candidate build, without a v prefix. Do not enter latest.",
-      "required": true,
+      "question_description": "Leave blank to select the newest ready local candidate matching the running kernel, or enter an exact stable 4.x version without v. No candidate means failure before downtime.",
+      "required": false,
       "type": "text",
       "variable": "rust_maintenance_hailo_version",
       "default": "",
-      "min": 5,
+      "min": 0,
       "max": 32
     },
     {

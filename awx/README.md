@@ -157,16 +157,64 @@ Hailo source updates use a separate candidate-only AWX job template for
 firmware terms and setting the private host variable
 `rust_maintenance_hailo_firmware_eula_accepted: true`. The builder keeps all outputs on the
 Pi and never uploads firmware. `playbooks/maintenance-hailo.yml` is a distinct
-NAS-backed, manual maintenance action; select an exact candidate version and
-review its rollback/hardware validation output. Import
+NAS-backed, manual maintenance action. Leave the candidate version blank to
+select the newest complete local candidate newer than the installed driver
+and matching the running kernel, or enter an exact version override.
+Hashes and source commits are validated before announcing downtime. No eligible
+candidate means the job stops before interrupting Rust.
+Review its rollback/hardware validation output. Import
 `awx/hailo-maintenance-survey.json` into that dedicated template and enable its
-survey. Both the version and countdown are required launch inputs; the EULA
+survey. Only the countdown is required; the version is an optional override. The EULA
 approval is intentionally not a survey field. The candidate-build template
 needs no survey and never chains automatically into installation.
 The selectable maintenance survey also includes the `hailo` choice.
 Re-import `awx/maintenance-survey.json` after syncing if using that template
 instead. These files define launch surveys, not AWX job-template objects;
 project sync alone does not create templates or import surveys.
+
+### Event-driven Hailo builds
+
+`rulebooks/hailo-candidate.yml` is the EDA entry point. Configure an EDA Git
+project using this repository and a decision environment containing
+`ansible-rulebook` and the `rustberrypi.hailo.hailo_release` source. Build the
+derived environment from the repository root:
+
+```sh
+podman build -f extensions/eda/Dockerfile \
+  --build-arg EDA_BASE_IMAGE=YOUR_TESTED_EDA_IMAGE \
+  -t localhost/rustberrypi-eda-hailo:YOUR_REVISION .
+```
+
+The base image must run as UID 1001, as the Dockerfile restores that user.
+The Dockerfile includes only the source and shared release selector, not private
+inventory or firmware. Use a locally cached image with pull policy **Never**
+when the activation worker uses that same Podman backend; otherwise publish it
+to your approved registry and configure its image credential.
+Simply syncing a Git project does not install its Python source into the
+decision environment. Its source is
+`extensions/eda/plugins/event_source/hailo_release.py`; the source reuses the
+builder's stable common Hailo-8 4.x release selection. Set `awx_organization`
+in the activation variables to the organization owning the candidate template
+and attach an Automation Controller credential authorized to launch only the
+candidate job. The EDA activation checks hourly and emits once on startup and
+when the common upstream version changes. The Pi-side builder still checks
+whether a newer candidate is needed; an EDA restart cannot force a downgrade.
+A failed build is visible as a failed AWX job; retry it manually after correcting
+the error, or restart the activation to recheck the current release.
+
+The rulebook never launches maintenance, approves firmware terms, changes
+surveys, or installs a candidate. Operators launch Hailo maintenance or Select
+maintenance after a candidate exists. Standard AWX surveys do not dynamically
+disable the Launch button based on Pi state; the pre-downtime candidate gate is
+the authoritative availability check. Do not enable optional-version surveys
+until the project revision includes the corresponding selection code.
+
+An EDA container marked running is not sufficient: the controller needs initial
+organization/user setup, a synced project, a decision environment, controller
+credentials, and a healthy rulebook activation with a working execution backend.
+Outbound GitHub polling needs no public webhook or EDA reverse proxy. Browser
+UI/API access requires separate DNS/TLS routing; preserve the controller's
+WebSocket route and do not expose an unauthenticated API.
 
 A genuinely fleet-wide, non-secret default belongs in
 `inventory/group_vars/rust_servers.yml` **and** the identical

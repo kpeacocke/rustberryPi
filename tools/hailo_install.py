@@ -12,6 +12,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 
 VERSION_PATTERN = re.compile(r"^4\.\d+\.\d+$")
@@ -115,6 +116,71 @@ def version_key(version):
     if not VERSION_PATTERN.fullmatch(version):
         return None
     return tuple(int(part) for part in version.split("."))
+
+
+def candidate_status(root, version=""):
+    """Inspect complete local candidates without changing the installed driver."""
+    if version and not VERSION_PATTERN.fullmatch(version):
+        raise ValueError(
+            "Candidate version must be a stable Hailo 4.x version"
+        )
+    kernel = os.uname().release
+    probe = run(["modinfo", "-F", "version", MODULE], check=False)
+    if probe.returncode != 0 or version_key(probe.stdout.strip()) is None:
+        raise RuntimeError("Cannot determine installed Hailo driver version")
+    installed = version_key(probe.stdout.strip())
+    versions = (
+        [version]
+        if version
+        else sorted(
+            (
+                path.name
+                for path in (root / "candidates").glob("*")
+                if VERSION_PATTERN.fullmatch(path.name)
+                and (path / "READY").is_file()
+            ),
+            key=version_key,
+            reverse=True,
+        )
+    )
+    for selected in versions:
+        candidate, manifest = verify_candidate(root, selected)
+        if (
+            manifest.get("architecture") != "aarch64"
+            or manifest.get("kernel_release") != kernel
+            or version_key(selected) <= installed
+        ):
+            if version:
+                raise ValueError(
+                    "Selected candidate must be newer than the installed "
+                    "driver and match aarch64 and the running kernel"
+                )
+            continue
+        return {
+            "installed": probe.stdout.strip(),
+            "available": selected,
+            "candidate_ready": True,
+            "kernel_release": kernel,
+            "built_at": manifest.get("built_at"),
+        }
+    return {
+        "installed": probe.stdout.strip(),
+        "available": None,
+        "candidate_ready": False,
+        "kernel_release": kernel,
+        "built_at": None,
+    }
+
+
+def select_candidate(root, version=""):
+    """Select a complete local candidate for this kernel before downtime."""
+    status = candidate_status(root, version)
+    if not status["candidate_ready"]:
+        raise ValueError(
+            "No ready, newer Hailo candidate matches the running kernel; "
+            "run the candidate build first"
+        )
+    return status["available"]
 
 
 def copy_dkms_source(driver, version, source_root=Path("/usr/src")):
@@ -492,13 +558,35 @@ def activate(root, version):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("version")
+    parser.add_argument("version", nargs="?", default="")
+    inspection = parser.add_mutually_exclusive_group()
+    inspection.add_argument(
+        "--select",
+        action="store_true",
+        help="Validate and print the selected local candidate; never install",
+    )
+    inspection.add_argument(
+        "--status",
+        action="store_true",
+        help="Print validated candidate readiness as JSON; never install",
+    )
     parser.add_argument("--root", type=Path, default=ROOT_DEFAULT)
     args = parser.parse_args()
     try:
+        if args.status:
+            print(json.dumps(dict(
+                candidate_status(args.root, args.version),
+                ok=True, checked_at=time.time(),
+            )))
+            return 0
+        if args.select:
+            print(select_candidate(args.root, args.version))
+            return 0
+        if not args.version:
+            raise ValueError("Activation requires an exact candidate version")
         return activate(args.root, args.version)
     except Exception as error:
-        print(f"Hailo activation failed: {error}", file=sys.stderr)
+        print(f"Hailo operation failed: {error}", file=sys.stderr)
         return 1
 
 

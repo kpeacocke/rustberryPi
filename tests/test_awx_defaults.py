@@ -20,7 +20,7 @@ class AwxDefaultsTests(unittest.TestCase):
             'rust_maintenance_warning_seconds',
         })
         version = questions['rust_maintenance_hailo_version']
-        self.assertTrue(version['required'])
+        self.assertFalse(version['required'])
         self.assertEqual(version['type'], 'text')
         self.assertEqual(version['default'], '')
         countdown = questions['rust_maintenance_warning_seconds']
