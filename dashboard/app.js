@@ -11,7 +11,7 @@ function card(grid,title,value,note,wide=false){const c=el('section',undefined,'
 function listCard(grid,title,items,wide=true){const c=card(grid,title,'','',wide),list=el('ul',undefined,'list');c.querySelector('.value').remove();for(const item of items){const li=el('li',item.title||item.text,item.severity);if(item.detail)li.append(el('small',item.detail));if(item.at)li.append(el('small',new Date(item.at*1000).toLocaleTimeString()));list.append(li);}if(!items.length)list.append(el('li','Nothing recorded yet','muted'));c.append(list);return c;}
 function chart(c,history,key,color,max){const canvas=el('canvas');canvas.width=800;canvas.height=150;canvas.setAttribute('aria-label',key+' trend over the last ten minutes');c.append(canvas);const ctx=canvas.getContext('2d');ctx.strokeStyle=color;ctx.lineWidth=3;ctx.beginPath();let started=false;history.forEach((p,i)=>{const n=p[key];if(typeof n!=='number'){started=false;return;}const x=i/Math.max(history.length-1,1)*800,y=145-Math.min(n/max,1)*135;if(started)ctx.lineTo(x,y);else ctx.moveTo(x,y);started=true;});ctx.stroke();}
 function playerHistory(grid,d){const c=card(grid,'Approved players · last login','','',true);c.classList.add('player-history');c.querySelector('.value').remove();const entries=el('div',undefined,'history-grid');for(const p of d.allowed_players||[]){const entry=el('div',undefined,'history-player');entry.append(el('strong',p.name),el('span',p.status==='online'?'Online now':p.status==='offline'?'Offline':'Status unknown',p.status==='online'?'good':'muted'));entry.append(el('small',p.last_login?'≈ '+new Date(p.last_login*1000).toLocaleString():p.last_seen?'Login time unavailable':'Not observed yet'));entries.append(entry);}c.append(entries);if(!d.allowed_players?.length)c.append(el('p','No approved roster configured','muted'));if(d.player_history_error)c.append(el('small','History storage unavailable — new readings may not survive restart','review'));return c;}
-let fexInputsOpen=false;
+let fexInputsOpen=false,hailoInputsOpen=false;
 function copyInputs(group,label,text){
  const button=el('button',label),status=el('span',undefined,'sub');
  button.type='button';status.setAttribute('role','status');
@@ -24,6 +24,7 @@ function fexRelease(grid,m){
  const valid=pin=>/^FEX-[A-Za-z0-9._-]+$/.test(pin.version||'')&&/^[a-f0-9]{40}$/.test(pin.commit||'');
  const latest={version:fex.latest_release,commit:fex.latest_commit};
  const c=card(grid,'FEX release',fex.latest_release||'Unknown','Installed '+(installedFresh?installed.version:'Unknown — installed-version check failed or stale')+' · Latest release '+(latestFresh?'checked':'unknown or stale')+' · Upgrades require operator approval',true);
+ c.classList.add('release-card');
  const details=el('details',undefined,'fex-inputs'),summary=el('summary','Optional AWX inputs · copy only');
  details.open=fexInputsOpen;details.addEventListener('toggle',()=>{fexInputsOpen=details.open;});details.append(summary);
  const group=el('div',undefined,'sub');group.append(el('strong','Latest upstream release — not Pi-validated'));
@@ -37,14 +38,18 @@ function fexRelease(grid,m){
 function hailoCandidate(grid,m){
  const h=m.hailo||{},fresh=h.ok&&age(h.checked_at)<=86400;
  const ready=fresh&&h.candidate_ready===true&&/^4\.\d+\.\d+$/.test(h.available||'');
- const c=card(grid,'Hailo driver candidate',!fresh?'Unknown':ready?'Ready to deploy':'No candidate ready','Installed '+(fresh?h.installed:'Unknown')+' · Candidate-only build; never installed automatically',true);
- if(!fresh){c.append(el('div',h.error||'Readiness check failed or stale; refresh maintenance checks.','review'));return;}
- if(!ready){c.append(el('div','Run the Hailo candidate job to build a newer release for the running kernel.','sub'));return;}
- c.querySelector('.value').classList.add('review');
- const group=el('div',undefined,'fex-inputs');
- group.append(el('strong','Validated Hailo '+h.available),el('div','Kernel '+h.kernel_release+' · Integrity and firmware checked','sub'));
- copyInputs(group,'Copy Hailo maintenance inputs','rust_maintenance_hailo_version: '+h.available);
- c.append(group,el('div','AWX: RustberryPi - Hailo maintenance · Launch manually only when Rust is healthy.','sub'));
+ const c=card(grid,'Hailo release',ready?h.available:fresh?'None ready':'Unknown','Installed '+(fresh?h.installed:'Unknown')+' · Candidate build '+(fresh?'checked':'unknown or stale')+' · Upgrades require operator approval',true);
+ c.classList.add('release-card');
+ c.append(el('div',!fresh?'Readiness unknown':ready?'Ready to deploy · validated candidate':'No candidate ready','candidate-status sub'+(ready?' review':'')));
+ const details=el('details',undefined,'fex-inputs'),summary=el('summary','Optional AWX inputs · copy only');
+ details.open=hailoInputsOpen;details.addEventListener('toggle',()=>{hailoInputsOpen=details.open;});details.append(summary);
+ const group=el('div',undefined,'sub');
+ if(ready){
+  group.append(el('strong','Validated candidate — not installed'),el('div','Kernel '+h.kernel_release+' · Integrity and firmware checked','sub'));
+  copyInputs(group,'Copy Hailo candidate','rust_maintenance_hailo_version: '+h.available);
+  group.append(el('div','AWX: RustberryPi - Hailo maintenance · Launch manually only when Rust is healthy.','sub'));
+ }else group.append(el('div',!fresh?h.error||'Readiness check failed or stale; refresh maintenance checks.':'Run the Hailo candidate job to build a newer release for the running kernel.',!fresh?'review':'sub'));
+ details.append(group);c.append(details);
 }
 function serverHealth(grid,d,compact=false){
  const health=d.server_health||{},hat=health.hat||{},comparison=health.comparison||{};
@@ -74,7 +79,7 @@ function serverHealth(grid,d,compact=false){
   for(const metric of comparison.metrics||[])c.append(el('small',metric.title+': '+number(metric.before,'',1)+' → '+number(metric.after,'',1)+' (change '+number(metric.change,'',1)+')','sub'));
  }
 }
-function render(d){main.replaceChildren();const grid=el('div',undefined,'grid');main.append(grid);const stale=age(d.sampled_at)>20||!d.sampled_at,rconStale=age(d.rcon_at)>20||!d.rcon_at;const svc=d.service||{},h=d.host||{},g=d.game||{},m=d.maintenance||{},hist=d.history||[];
+function render(d){const scrollPositions=new Map([...main.querySelectorAll('.card')].map(c=>[c.querySelector('h2').textContent,c.scrollTop]));main.replaceChildren();const grid=el('div',undefined,'grid');main.append(grid);const stale=age(d.sampled_at)>20||!d.sampled_at,rconStale=age(d.rcon_at)>20||!d.rcon_at;const svc=d.service||{},h=d.host||{},g=d.game||{},m=d.maintenance||{},hist=d.history||[];
  const ready=!stale&&svc.ActiveState==='active'&&!rconStale&&d.game_query_ready===true;let status=ready?'Ready':svc.ActiveState==='active'?'Starting / telemetry unavailable':svc.ActiveState||'Unknown';
  banner.className=stale||rconStale?'stale':'';banner.textContent=stale?'TELEMETRY STALE — displayed values may be old':rconStale?'RCON unavailable — player values may be old; inspect startup if this persists':'LIVE · Local telemetry · Updated every 5 seconds';
  document.querySelector('#sample-age').textContent='Sample age: '+age(d.sampled_at)+'s';
@@ -87,7 +92,9 @@ function render(d){main.replaceChildren();const grid=el('div',undefined,'grid');
  chart(card(grid,'Memory',number(h.memory_percent,'%'),number(h.memory_used_gib,' GiB',1)+' / '+number(h.memory_total_gib,' GiB',1)+' · Swap '+number(h.swap_used_mib,' MiB')),hist,'memory','#8dbaf7',100);
  card(grid,'Temperature',number(h.temperature,'°C',1),'Current throttle bitmask: '+(h.throttled===null?'unknown':h.throttled));card(grid,'USB free',number(h.disk_free_gib,' GiB',1),number(h.disk_percent,'% used')+' · Host disk R/W '+number(h.read_kib_s,'/',0)+number(h.write_kib_s,' KiB/s',0));
  const packages=m.packages||{},rust=m.rust||{};card(grid,'Package updates',packages.ok?String(packages.count):'Unknown',(packages.security_count??'?')+' security · checked '+duration(age(packages.checked_at))+' ago · Reboot '+(m.reboot_required?'requested':'not signalled'));card(grid,'Rust build',rust.installed||'Unknown','Available '+(rust.available||'?')+' · '+(rust.ok?'checked '+duration(age(rust.checked_at))+' ago':'check failed/not run'));
- fexRelease(grid,m);hailoCandidate(grid,m);card(grid,'Backup age',m.backup?.backup_success?duration(age(m.backup.backup_success)):'Not recorded','Verify restore on a spare system');
- serverHealth(grid,d);listCard(grid,'Needs attention',d.suggestions||[],false);listCard(grid,'Operational checks',[{title:'Network receive/send: '+number(h.rx_kib_s,' / ',1)+number(h.tx_kib_s,' KiB/s',1),detail:'Wi-Fi '+number(h.wifi_dbm,' dBm')},{title:'Automatic Rust restarts: '+(svc.NRestarts??'?'),detail:'Cumulative systemd counter'},{title:'Journal warning matches: '+(m.journal?.warning_matches??'?'),detail:m.journal?.scope||'No successful journal check'},{title:'Ansible result: not tracked',detail:'Review the most recent controller or AWX job; no success is inferred.'}],false);
+ card(grid,'Backup age',m.backup?.backup_success?duration(age(m.backup.backup_success)):'Not recorded','Verify restore on a spare system');listCard(grid,'Needs attention',d.suggestions||[],false);
+ fexRelease(grid,m);hailoCandidate(grid,m);
+ serverHealth(grid,d);listCard(grid,'Operational checks',[{title:'Network receive/send: '+number(h.rx_kib_s,' / ',1)+number(h.tx_kib_s,' KiB/s',1),detail:'Wi-Fi '+number(h.wifi_dbm,' dBm')},{title:'Automatic Rust restarts: '+(svc.NRestarts??'?'),detail:'Cumulative systemd counter'},{title:'Journal warning matches: '+(m.journal?.warning_matches??'?'),detail:m.journal?.scope||'No successful journal check'},{title:'Ansible result: not tracked',detail:'Review the most recent controller or AWX job; no success is inferred.'}]);
+ for(const c of grid.querySelectorAll('.card')){const position=scrollPositions.get(c.querySelector('h2').textContent);if(position!==undefined)c.scrollTop=position;}
 }
 async function refresh(){document.querySelector('#clock').textContent=new Date().toLocaleTimeString();try{const response=await fetch('/api/status',{cache:'no-store'});if(!response.ok)throw Error();render(await response.json());}catch{banner.className='stale';banner.textContent='DASHBOARD DISCONNECTED — values below are stale';}setTimeout(refresh,5000);}refresh();

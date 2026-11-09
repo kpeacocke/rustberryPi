@@ -75,12 +75,17 @@ System additionally lists measured deviations, missing metrics and the latest
 verified maintenance's workload-matched before/after medians. Learning,
 unavailable data and unmatched workloads are not displayed as successful health
 checks. Existing threshold suggestions remain separate. On the 1920x1080 System
-display, detailed analysis and long check lists scroll within their panels; the
-analysis panel is keyboard-focusable. The compact Overview summary preserves the
+display, cards fit within the viewport; expanded inputs, detailed analysis and
+long check lists scroll within their panels, preserving their scroll positions
+when live data refreshes. The analysis panel is
+keyboard-focusable. FEX and Hailo share compact release cards and expandable,
+optional copy inputs. Hailo's separate ready-to-deploy status and Needs attention
+alert still require fresh, validated candidate evidence; a release version alone
+never establishes readiness. The compact Overview summary preserves the
 1280x720 kiosk layout with up to six approved players. Overview keeps the roster
 in one compact row at that resolution; names truncate rather than widening the
 page. Players & game keeps all six connected-player rows and uses two columns
-for last-login history. Health & maintenance remains unchanged. Six-player
+for last-login history. Six-player
 access support is not a performance certification for six concurrent players;
 measure FPS and memory pressure on the Pi.
 
