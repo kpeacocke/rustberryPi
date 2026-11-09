@@ -9,6 +9,36 @@ import yaml
 
 
 class AwxDefaultsTests(unittest.TestCase):
+    def test_preflight_accepts_patched_runtime_but_rejects_untested_versions(self):
+        root = Path(__file__).resolve().parents[1]
+        tasks = yaml.safe_load(
+            (root / 'playbooks/awx-preflight.yml').read_text()
+        )[0]['tasks']
+        assertion = next(
+            task for task in tasks if task['name'] == 'Require a tested controller version'
+        )['ansible.builtin.assert']
+        assertion['that'] = [
+            condition.replace('ansible_version.full', 'candidate_version')
+            for condition in assertion['that']
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            playbook = Path(directory) / 'preflight-version.json'
+            playbook.write_text(json.dumps([{
+                'hosts': 'localhost',
+                'gather_facts': False,
+                'tasks': [{'ansible.builtin.assert': assertion}],
+            }]))
+            for version, accepted in [('2.18.19', True), ('2.18.20', True),
+                                      ('2.20.1', True), ('2.18.21', False)]:
+                with self.subTest(version=version):
+                    result = subprocess.run(
+                        ['ansible-playbook', '-i', 'localhost,', '-c', 'local',
+                         str(playbook), '-e', f'candidate_version={version}'],
+                        capture_output=True, text=True, cwd=root,
+                    )
+                    self.assertEqual(result.returncode == 0, accepted,
+                                     result.stdout + result.stderr)
+
     def test_dedicated_hailo_survey_requires_candidate_not_eula_approval(self):
         root = Path(__file__).resolve().parents[1]
         survey = json.loads(

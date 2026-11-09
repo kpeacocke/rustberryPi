@@ -13,8 +13,8 @@
     - name: Require a tested controller version
       ansible.builtin.assert:
         that:
-          - ansible_version.full in ['2.18.19', '2.20.1']
-        fail_msg: Use the tested ansible-core 2.20.1 runtime or the explicitly tested 2.18.19 compatibility runtime.
+          - ansible_version.full in ['2.18.19', '2.18.20', '2.20.1']
+        fail_msg: Use the tested ansible-core 2.20.1 runtime or an explicitly tested 2.18.19 or 2.18.20 compatibility runtime.
 
     - name: Check current hostname
       ansible.builtin.command: hostnamectl --static

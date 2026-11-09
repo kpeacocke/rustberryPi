@@ -12,8 +12,9 @@ and other host-specific settings in private AWX inventory variables. Use SSH
 existing Machine credential that can connect to the Pi and become root. Preserve
 SSH host-key verification and provision trusted host keys in the execution
 environment. Use an execution environment with the tested ansible-core 2.20.1
-from `requirements-dev.txt`, or 2.18.19 from `awx/requirements-compat.txt`, and a
-compatible Python version. CI tests both versions; collection sync alone
+from `requirements-dev.txt`, 2.18.19 from `awx/requirements-compat.txt`, or
+2.18.20 from `awx/requirements-compat-21820.txt`, and a compatible Python
+version. CI tests all three versions; collection sync alone
 does not upgrade the execution environment's Ansible version.
 
 Verified runtime: official `ghcr.io/ansible/community-ansible-dev-tools:v26.1.0`
@@ -30,7 +31,7 @@ Project synchronization installs this repository's pinned collections.
 Some custom AWX Compose deployments disable runner process isolation. In that
 case the execution worker's installed Ansible runs every job, regardless of the
 image selected in AWX. The readiness check reports the **actual** version. The
-2.18.19 compatibility runtime was tested for this deployment mode; do not assume
+2.18.19 and 2.18.20 compatibility runtimes are tested for this deployment mode; do not assume
 that selecting the 2.20.1 image upgrades a non-isolated worker. Changing the shared
 worker or enabling container isolation is a separate infrastructure change.
 
