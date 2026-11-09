@@ -1,6 +1,6 @@
 {
   "name": "Install Hailo candidate",
-  "description": "Install a validated local candidate already built for the running kernel on the Pi. Announces downtime and requires a verified NAS backup. Firmware EULA approval must be supplied separately in private host variables. Unlike All on configured HAT hosts, this standalone action never builds after OS work.",
+  "description": "Install and activate a validated local candidate already built for the running kernel on the Pi. Announces downtime and requires a verified NAS backup. Refuses activation while persistently safety-disabled; use Hailo safety control to install while disabled and enable/verify separately. Firmware EULA approval must be supplied separately in private host variables. Unlike All on enabled HAT hosts, this standalone action never builds after OS work.",
   "spec": [
     {
       "question_name": "Hailo candidate version",
