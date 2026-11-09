@@ -2,6 +2,8 @@
 """Build a private, uninstalled Hailo-8 source candidate on the Pi."""
 
 import argparse
+from contextlib import contextmanager
+import fcntl
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -23,6 +25,29 @@ FIRMWARE_BASE = "https://hailo-hailort.s3.eu-west-2.amazonaws.com"
 VERSION_PATTERN = re.compile(r"^v?(4)\.(\d+)\.(\d+)$")
 MAX_FIRMWARE_BYTES = 256 * 1024 * 1024
 ROOT_DEFAULT = Path("/var/lib/rustberrypi-hailo")
+MAINTENANCE_WINDOW = Path("/var/lib/rustberrypi-maintenance")
+
+
+@contextmanager
+def candidate_lock(root):
+    root.mkdir(parents=True, exist_ok=True, mode=0o755)
+    descriptor = os.open(
+        root / ".candidate.lock",
+        os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW,
+        0o600,
+    )
+    with os.fdopen(descriptor, "r") as lock:
+        os.fchmod(lock.fileno(), 0o600)
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        yield
+
+
+def require_build_window(maintenance):
+    if MAINTENANCE_WINDOW.exists() != maintenance:
+        raise RuntimeError(
+            "Candidate builds are blocked during maintenance; only the "
+            "maintenance-owned build may run inside that window"
+        )
 
 
 def version_key(value):
@@ -83,6 +108,19 @@ def latest_common_release(hailort_tags, driver_tags):
             "repositories"
         )
     return max(common, key=version_key).removeprefix("v")
+
+
+def select_release(version=""):
+    hailort_tags = get_release_tags(REPOSITORIES["hailort"])
+    driver_tags = get_release_tags(REPOSITORIES["driver"])
+    latest = latest_common_release(hailort_tags, driver_tags)
+    if version:
+        if not re.fullmatch(r"4\.\d+\.\d+", version):
+            raise ValueError("Override must be an exact stable Hailo 4.x version")
+        if f"v{version}" not in hailort_tags & driver_tags:
+            raise ValueError("Override is not a common stable Hailo-8 release")
+        return version
+    return latest
 
 
 def run(command, cwd=None, env=None):
@@ -341,16 +379,42 @@ def build_candidate(root, version, firmware_eula_accepted):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--firmware-eula-accepted", action="store_true")
+    parser.add_argument("--version", default="")
+    parser.add_argument("--select-release", action="store_true")
+    parser.add_argument("--maintenance", action="store_true")
     args = parser.parse_args()
     if not args.firmware_eula_accepted:
         parser.error(
             "firmware download requires the operator-approved "
             "--firmware-eula-accepted flag"
         )
-    version = latest_common_release(
-        get_release_tags(REPOSITORIES["hailort"]),
-        get_release_tags(REPOSITORIES["driver"]),
-    )
+    if args.maintenance and not args.version:
+        parser.error("Maintenance builds require the preselected exact version")
+    if args.maintenance and args.select_release:
+        parser.error("Release preflight cannot bypass common-stable validation")
+    if args.select_release:
+        build_selected(args)
+        return
+    with candidate_lock(ROOT_DEFAULT):
+        require_build_window(args.maintenance)
+        build_selected(args)
+
+
+def build_selected(args):
+    version = args.version if args.maintenance else select_release(args.version)
+    if version_key(version) is None or version.startswith("v"):
+        raise ValueError("Version must be an exact stable Hailo 4.x version")
+    if args.select_release:
+        installed = subprocess.run(
+            ["modinfo", "-F", "version", "hailo_pci"],
+            capture_output=True, check=True, text=True,
+        ).stdout.strip()
+        if version_key(installed) is None:
+            raise RuntimeError(f"Invalid installed Hailo release: {installed}")
+        if args.version and version_key(version) < version_key(installed):
+            raise ValueError("Override would downgrade the installed Hailo driver")
+        print(version)
+        return
     active_file = ROOT_DEFAULT / "active-version"
     active = (
         active_file.read_text(encoding="ascii").strip()

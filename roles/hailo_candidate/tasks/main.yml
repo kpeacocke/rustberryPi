@@ -3,6 +3,7 @@
   ansible.builtin.assert:
     that:
       - hailo_candidate_firmware_eula_accepted | bool
+      - hailo_candidate_version == '' or hailo_candidate_version is match('^4\.[0-9]+\.[0-9]+$')
       - ansible_facts['architecture'] == 'aarch64'
       - ansible_facts['distribution'] == 'Debian'
       - ansible_facts['distribution_major_version'] == '13'
@@ -74,16 +75,12 @@
 
 - name: Check for and build the newest common stable Hailo-8 candidate
   ansible.builtin.command:
-    argv:
-      - /usr/bin/nice
-      - -n
-      - '15'
-      - /usr/bin/ionice
-      - -c
-      - '3'
-      - /usr/bin/python3
-      - /usr/local/libexec/rustberrypi-hailo-candidate.py
-      - --firmware-eula-accepted
+    argv: >-
+      {{ ['/usr/bin/nice', '-n', '15', '/usr/bin/ionice', '-c', '3',
+          '/usr/bin/python3', '/usr/local/libexec/rustberrypi-hailo-candidate.py',
+          '--firmware-eula-accepted'] +
+         (['--version', hailo_candidate_version] if hailo_candidate_version | length > 0 else []) +
+         (['--maintenance'] if hailo_candidate_maintenance | bool else []) }}
   register: hailo_candidate_build
   async: 21600
   poll: 30
@@ -99,7 +96,9 @@
 
 - name: Validate candidate readiness without installing the driver
   ansible.builtin.command:
-    argv: [/usr/bin/python3, /usr/local/libexec/rustberrypi-hailo-install.py, --status]
+    argv: >-
+      {{ ['/usr/bin/python3', '/usr/local/libexec/rustberrypi-hailo-install.py'] +
+         (['--maintenance-status', hailo_candidate_version] if hailo_candidate_maintenance | bool else ['--status']) }}
   register: hailo_candidate_status
   changed_when: false
 
@@ -110,6 +109,7 @@
     owner: root
     group: root
     mode: '0644'
+  when: not hailo_candidate_maintenance | bool
 
 - name: Report candidate-only result
   ansible.builtin.debug:

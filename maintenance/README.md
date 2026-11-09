@@ -13,7 +13,7 @@ skip-backup option.
 | `playbooks/maintenance-fex.yml` | Build/adopt and activate an explicitly pinned FEX commit |
 | `playbooks/hailo-candidate.yml` | Check common stable Hailo-8 releases and build a private candidate only |
 | `playbooks/maintenance-hailo.yml` | Back up, activate and hardware-verify one explicitly selected local Hailo candidate |
-| `playbooks/maintenance-all.yml` | OS, then FEX, then Rust in one maintenance window |
+| `playbooks/maintenance-all.yml` | OS, FEX, Rust, then Hailo on detected Hailo hosts in one maintenance window |
 | `playbooks/maintenance.yml` | Select `rust_maintenance_target`: `os`, `fex`, `rust`, `os-rust`, `hailo`, or `all` |
 
 `os-rust` upgrades Debian packages, reboots, then checks and updates Rust in one
@@ -37,7 +37,9 @@ playbooks to implement “all”: that would cause three countdowns and restarts
 6. Create a fresh offline NAS archive, independently compare its SHA256, read all
    members and validate paths/types plus deployment metadata. This verifies archive
    integrity, **not** a restore rehearsal or a bootable OS backup.
-7. Run only the selected component(s). “All” runs OS → FEX → Rust.
+7. Run only the selected component(s). “All” runs OS → FEX → Rust → Hailo
+   when the existing read-only PCI detector finds Hailo hardware; otherwise it
+   explicitly skips Hailo. Inference enablement is independent.
 8. Check 4 KB pages, start Rust, wait for A2S readiness, restart telemetry, and
    wait for fresh authenticated RCON telemetry. Then clear the historical
    automatic restart counter, report success and restore previously running
@@ -90,8 +92,52 @@ backup and running Rust server as other maintenance. It stops the HAT worker,
 checks candidate hashes and kernel match, installs the driver through DKMS,
 switches the versioned runtime, and tests `hailortcli fw-control identify`.
 On failed hardware validation it attempts to restore the previous firmware,
-runtime pointer and DKMS module, then continues normal game/RCON recovery. A
-rollback failure leaves the normal persistent maintenance guard in place.
+runtime pointer and DKMS module, then continues normal game/RCON recovery.
+Successful rollback is still reported as failed maintenance after recovery, not
+as a successful Hailo upgrade. A rollback failure leaves the normal persistent
+maintenance guard in place.
+
+“All” includes Hailo when the existing read-only peripheral detector finds a
+Hailo PCI device. `rust_telemetry_hat_enabled` controls model inference only:
+Hailo maintenance still runs when inference is disabled. All requires the same private firmware
+approval, Debian 13 arm64 and an existing driver; it does not commission hardware
+or enable inference. Before downtime it validates and pins the newest common
+stable Hailo-8 4.x release (or the exact `rust_maintenance_hailo_version`
+override, rejecting downgrades). After OS work it refreshes platform facts and
+uses the exact **running** kernel and its headers to build/rebuild that release
+when newer. Thus an OS reboot cannot leave a prebuilt candidate kernel-stale.
+With `rust_maintenance_os_reboot: false`, the still-running kernel is used; the
+pending kernel is not treated as active. Candidate checksums, source commits,
+architecture and kernel checks remain mandatory before activation. If there
+is no newer release, All explicitly verifies the installed module's running-kernel
+match and `fw-control identify` rather than treating a selection failure as success.
+Missing modules, invalid artifacts and hardware errors fail visibly.
+For an already-current source-managed runtime, the original manifest is immutable
+build provenance, not the installed module's post-OS kernel identity. Its hashes,
+source commits and architecture are still checked; the installed module's
+`modinfo` vermagic must independently match the running kernel, followed by
+hardware identification. OS DKMS can therefore rebuild a healthy installed module
+without rewriting the historical runtime or READY artifacts. Public candidate
+selection and activation still require artifacts built for the running kernel.
+
+Builds and candidate inspection/activation serialize on the local
+`/var/lib/rustberrypi-hailo/.candidate.lock`. After acquiring the existing
+maintenance-window directory, Hailo/All waits for any in-flight candidate builder
+before announcing downtime. EDA/manual candidate-only builds refuse to mutate
+candidates while that window exists; only its maintenance-owned build can run.
+An interrupted window therefore also blocks EDA builds until reviewed recovery.
+The root-only tools enforce lock mode `0600` on the opened descriptor and refuse
+symlink lock paths, including when hardening a lock from an earlier deployment.
+EDA remains candidate-only, and dashboard readiness remains validated local
+candidate readiness—not upstream release availability. No maintenance is launched
+automatically.
+Read-only common-release preflight does not acquire the artifact lock.
+For controller jobs that can run All with Hailo builds, use a **72000-second
+(20-hour)** timeout, not the existing `14400` (four-hour) budget. This includes
+up to six hours draining an existing builder plus six hours for the new build,
+backup/countdown/health budgets and OS/FEX/Rust/recovery overhead. Review measured
+durations and raise it further for larger configured health timeouts; see the
+[AWX timeout budget](../awx/README.md#where-a-new-variable-belongs).
 
 The Hailo-8 4.x source line is selected intentionally; global 5.x releases target
 other products. A successful v4.24 candidate build does not prove it fixes a

@@ -1,4 +1,17 @@
 ---
+- name: Build or revalidate approved release against post-OS running kernel
+  ansible.builtin.include_role:
+    name: hailo_candidate
+  vars:
+    hailo_candidate_version: '{{ rust_maintenance_hailo_release_version }}'
+    hailo_candidate_maintenance: true
+  when: rust_maintenance_all_hailo | bool
+
+- name: Remember validated post-OS candidate selection
+  ansible.builtin.set_fact:
+    rust_maintenance_hailo_selected_version: '{{ (hailo_candidate_status.stdout | from_json).available | default("", true) }}'
+  when: rust_maintenance_all_hailo | bool
+
 - name: Install Hailo candidate activation utility
   ansible.builtin.copy:
     src: '{{ playbook_dir }}/../tools/hailo_install.py'
@@ -16,8 +29,26 @@
   register: rust_maintenance_hailo_install
   changed_when: rust_maintenance_hailo_install.rc == 0
   failed_when: rust_maintenance_hailo_install.rc not in [0, 10]
+  when: rust_maintenance_target == 'hailo' or (hailo_candidate_status.stdout | from_json).candidate_ready
 
 - name: Report candidate rollback while allowing game recovery
   ansible.builtin.debug:
     msg: '{{ rust_maintenance_hailo_install.stderr | trim }}'
-  when: rust_maintenance_hailo_install.rc == 10
+  when: rust_maintenance_hailo_install.rc | default(-1) == 10
+
+- name: Hardware-verify already-current Hailo on the actual running kernel
+  ansible.builtin.command:
+    argv: [/usr/bin/python3, /usr/local/libexec/rustberrypi-hailo-install.py,
+           --verify-installed, '{{ rust_maintenance_hailo_release_version }}']
+  register: rust_maintenance_hailo_current
+  changed_when: false
+  when:
+    - rust_maintenance_all_hailo | bool
+    - not (hailo_candidate_status.stdout | from_json).candidate_ready
+
+- name: Report explicit already-current Hailo result
+  ansible.builtin.debug:
+    msg: '{{ rust_maintenance_hailo_current.stdout | trim }}'
+  when:
+    - rust_maintenance_all_hailo | bool
+    - not (hailo_candidate_status.stdout | from_json).candidate_ready

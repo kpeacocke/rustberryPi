@@ -58,7 +58,7 @@ overrides on the AWX **host**, not in shared group defaults.
 | Hailo candidate | `playbooks/hailo-candidate.yml` | Builds a private candidate only; never installs |
 | Hailo maintenance | `playbooks/maintenance-hailo.yml` | Survey from `awx/hailo-maintenance-survey.json`; installs an exact candidate after backup and announcement |
 | Rust maintenance | `playbooks/maintenance-rust.yml` | Rust only |
-| All maintenance | `playbooks/maintenance-all.yml` | One countdown/backup for OS, FEX and Rust |
+| All maintenance | `playbooks/maintenance-all.yml` | One countdown/backup for OS, FEX, Rust and detected Hailo hardware |
 | Select maintenance | `playbooks/maintenance.yml` | Survey from `awx/maintenance-survey.json` |
 
 Each workflow should invoke its corresponding job once. Do not chain component
@@ -168,6 +168,33 @@ survey. Only the countdown is required; the version is an optional override. The
 approval is intentionally not a survey field. The candidate-build template
 needs no survey and never chains automatically into installation.
 The selectable maintenance survey also includes the `hailo` choice.
+Its `all` choice includes Hailo when the existing read-only PCI detector finds
+Hailo hardware; hosts without Hailo explicitly skip it. This is independent of
+`rust_telemetry_hat_enabled`, which enables inference only. Private
+`rust_maintenance_hailo_firmware_eula_accepted: true` remains required.
+All validates/pins the common stable Hailo-8 4.x release or exact optional
+`rust_maintenance_hailo_version` override before downtime, then builds/revalidates
+against the actual running kernel after OS work/reboot. Already-current hosts
+undergo module-kernel and hardware verification without a driver upgrade.
+Historical source-runtime build manifests remain immutable when OS DKMS
+rebuilds the installed module for a new kernel; their integrity is checked
+separately from the installed module's actual kernel identity.
+Standalone `hailo` still requires a ready, newer local candidate before downtime.
+All shares the candidate artifact lock with candidate jobs and blocks new EDA
+builds for its maintenance window; it waits for in-flight builds before downtime.
+No additional provisioning, firmware approval or automatic maintenance chaining
+is introduced. Set the Select-maintenance/All controller timeout to **72000
+seconds (20 hours)** when All can build Hailo. The existing four-hour timeout
+(`14400`) is insufficient. This conservative budget covers draining an
+in-flight builder (`21660` seconds), the new build (`21600`), backup (`3600`),
+the maximum warning (`3600`), game health (`1800` by default), and time for
+OS/reboot, FEX, Rust, RCON recovery and board refresh. Increase it further if
+measured component times or the configured health timeout require more.
+Read-only release preflight does not wait on the artifact lock; builders are
+drained only after acquiring the maintenance marker and before downtime.
+On first rollout of artifact locking, drain any candidate job started with the
+older builder before launching All; an already-running old process cannot
+retroactively acquire the new lock.
 Re-import `awx/maintenance-survey.json` after syncing if using that template
 instead. These files define launch surveys, not AWX job-template objects;
 project sync alone does not create templates or import surveys.

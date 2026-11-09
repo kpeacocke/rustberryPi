@@ -1,4 +1,6 @@
 ---
+hailo_candidate_version: ''
+hailo_candidate_maintenance: false
 hailo_candidate_firmware_eula_accepted: >-
   {{ rust_maintenance_hailo_firmware_eula_accepted | default(false) | bool }}
 hailo_candidate_build_packages:

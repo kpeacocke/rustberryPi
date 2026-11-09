@@ -24,6 +24,13 @@ with patch.dict(sys.modules, {'websocket': MagicMock()}):
 
 
 class MaintenanceTests(unittest.TestCase):
+    def test_announce_cli_accepts_hailo_without_live_rcon(self):
+        with patch.object(sys, 'argv', ['maintenance.py', 'announce',
+                                      '--seconds', '0', '--jobs', 'hailo']), \
+                patch.object(control, 'notices') as notices:
+            control.main()
+        notices.assert_called_once_with(0, 'hailo')
+
     def test_telemetry_only_deploy_discovers_versioned_game_fex(self):
         defaults = yaml.safe_load(
             (ROOT / 'roles/rust_telemetry/defaults/main.yml').read_text()

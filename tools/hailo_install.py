@@ -4,6 +4,8 @@ candidate.
 """
 
 import argparse
+from contextlib import contextmanager
+import fcntl
 import hashlib
 import json
 import os
@@ -28,6 +30,20 @@ FIRMWARE_BASE = "https://hailo-hailort.s3.eu-west-2.amazonaws.com"
 APT_PACKAGES = ("hailort-pcie-driver", "hailort", "python3-hailort")
 
 
+@contextmanager
+def candidate_lock(root):
+    root.mkdir(parents=True, exist_ok=True, mode=0o755)
+    descriptor = os.open(
+        root / ".candidate.lock",
+        os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW,
+        0o600,
+    )
+    with os.fdopen(descriptor, "r") as lock:
+        os.fchmod(lock.fileno(), 0o600)
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        yield
+
+
 def run(command, check=True, env=None):
     return subprocess.run(
         command,
@@ -39,7 +55,8 @@ def run(command, check=True, env=None):
     )
 
 
-def verify_candidate(root, version):
+def verify_artifact_integrity(root, version):
+    """Verify immutable build artifacts, including an installed historical runtime."""
     if not VERSION_PATTERN.fullmatch(version):
         raise ValueError(
             "Candidate version must be a stable Hailo 4.x version"
@@ -112,6 +129,15 @@ def verify_candidate(root, version):
     return candidate, manifest
 
 
+def verify_candidate(root, version):
+    candidate, manifest = verify_artifact_integrity(root, version)
+    if manifest.get("architecture") != "aarch64":
+        raise ValueError("Candidate was not built for aarch64")
+    if manifest.get("kernel_release") != os.uname().release:
+        raise ValueError("Candidate driver does not match the running kernel")
+    return candidate, manifest
+
+
 def version_key(version):
     if not VERSION_PATTERN.fullmatch(version):
         return None
@@ -144,7 +170,7 @@ def candidate_status(root, version=""):
         )
     )
     for selected in versions:
-        candidate, manifest = verify_candidate(root, selected)
+        candidate, manifest = verify_artifact_integrity(root, selected)
         if (
             manifest.get("architecture") != "aarch64"
             or manifest.get("kernel_release") != kernel
@@ -181,6 +207,55 @@ def select_candidate(root, version=""):
             "run the candidate build first"
         )
     return status["available"]
+
+
+def maintenance_status(root, version):
+    """Validate only the approved release, distinguishing current from failure."""
+    if version_key(version) is None:
+        raise ValueError("Maintenance requires an exact stable Hailo 4.x version")
+    installed = run(["modinfo", "-F", "version", MODULE]).stdout.strip()
+    if version_key(installed) is None:
+        raise RuntimeError("Cannot determine installed Hailo driver version")
+    if version_key(version) > version_key(installed):
+        return candidate_status(root, version)
+    if (root / "candidates" / version).exists():
+        _, manifest = verify_artifact_integrity(root, version)
+        if manifest.get("architecture") != "aarch64":
+            raise ValueError("Selected candidate was not built for aarch64")
+    vermagic = run(["modinfo", "-F", "vermagic", MODULE]).stdout.split()
+    if not vermagic or vermagic[0] != os.uname().release:
+        raise ValueError("Installed Hailo module does not match the running kernel")
+    return {
+        "installed": installed,
+        "available": None,
+        "candidate_ready": False,
+        "kernel_release": os.uname().release,
+        "built_at": None,
+    }
+
+
+def verify_installed(root, version):
+    status = maintenance_status(root, version)
+    if status["candidate_ready"]:
+        raise ValueError("A newer selected candidate still requires activation")
+    source_managed = (root / "active-version").is_file()
+    if source_managed:
+        active = (root / "active-version").read_text(encoding="ascii").strip()
+        if active != status["installed"]:
+            raise ValueError("Active Hailo runtime and installed driver differ")
+        # OS DKMS may rebuild the installed module without rewriting this immutable manifest.
+        candidate, manifest = verify_artifact_integrity(root, active)
+        if manifest.get("architecture") != "aarch64":
+            raise ValueError("Active runtime was not built for aarch64")
+        if current_target() != str(candidate.resolve()):
+            raise ValueError("Active Hailo runtime pointer differs from its manifest")
+        cli = str(CURRENT_LINK / "runtime" / "bin" / "hailortcli")
+        env = dict(os.environ, LD_LIBRARY_PATH=str(CURRENT_LINK / "runtime" / "lib"))
+    else:
+        cli, env = "hailortcli", None
+    run(["modprobe", MODULE])
+    run([cli, "fw-control", "identify"], env=env)
+    print(f"Hailo {status['installed']} is current; running-kernel hardware verification passed.")
 
 
 def copy_dkms_source(driver, version, source_root=Path("/usr/src")):
@@ -570,24 +645,40 @@ def main():
         action="store_true",
         help="Print validated candidate readiness as JSON; never install",
     )
+    inspection.add_argument("--maintenance-status", action="store_true")
+    inspection.add_argument("--verify-installed", action="store_true")
+    inspection.add_argument("--quiesce", action="store_true")
     parser.add_argument("--root", type=Path, default=ROOT_DEFAULT)
     args = parser.parse_args()
     try:
-        if args.status:
-            print(json.dumps(dict(
-                candidate_status(args.root, args.version),
-                ok=True, checked_at=time.time(),
-            )))
-            return 0
-        if args.select:
-            print(select_candidate(args.root, args.version))
-            return 0
-        if not args.version:
-            raise ValueError("Activation requires an exact candidate version")
-        return activate(args.root, args.version)
+        with candidate_lock(args.root):
+            return perform_operation(args)
     except Exception as error:
         print(f"Hailo operation failed: {error}", file=sys.stderr)
         return 1
+
+
+def perform_operation(args):
+    if args.quiesce:
+        return 0
+    if args.maintenance_status:
+        print(json.dumps(maintenance_status(args.root, args.version)))
+        return 0
+    if args.verify_installed:
+        verify_installed(args.root, args.version)
+        return 0
+    if args.status:
+        print(json.dumps(dict(
+            candidate_status(args.root, args.version),
+            ok=True, checked_at=time.time(),
+        )))
+        return 0
+    if args.select:
+        print(select_candidate(args.root, args.version))
+        return 0
+    if not args.version:
+        raise ValueError("Activation requires an exact candidate version")
+    return activate(args.root, args.version)
 
 
 if __name__ == "__main__":

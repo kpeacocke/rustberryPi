@@ -1,9 +1,12 @@
 """Hailo release selection, candidate integrity and DKMS layout checks."""
 
 import asyncio
+from contextlib import nullcontext
 import hashlib
 import importlib.util
 import json
+import io
+import stat
 from pathlib import Path
 import tempfile
 import unittest
@@ -11,6 +14,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import yaml
+from jinja2 import Environment, StrictUndefined
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -64,6 +68,111 @@ class HailoEventSourceTests(unittest.IsolatedAsyncioTestCase):
 
 
 class HailoReleaseTests(unittest.TestCase):
+    def test_exact_override_must_be_a_common_stable_release(self):
+        with patch.object(candidate, "get_release_tags", side_effect=[
+            {"v4.23.0", "v4.24.0"}, {"v4.23.0", "v4.24.0"},
+        ]):
+            self.assertEqual(candidate.select_release("4.23.0"), "4.23.0")
+        for version in ("4.25.0", "v4.24.0", "5.0.0", "4.24.0-rc1"):
+            with self.subTest(version=version), patch.object(
+                candidate, "get_release_tags", return_value={"v4.24.0"}
+            ), self.assertRaises(ValueError):
+                candidate.select_release(version)
+
+    def test_all_release_preflight_checks_installed_without_building(self):
+        with patch("sys.argv", ["builder", "--firmware-eula-accepted",
+                                "--select-release", "--version", "4.24.0"]), \
+                patch.object(candidate, "get_release_tags", return_value={"v4.24.0"}), \
+                patch.object(candidate.subprocess, "run",
+                             return_value=SimpleNamespace(stdout="4.23.0")) as probe, \
+                patch.object(candidate, "build_candidate") as build, \
+                patch.object(candidate, "candidate_lock", return_value=nullcontext()) as lock, \
+                patch("sys.stdout", new_callable=io.StringIO) as output:
+            candidate.main()
+        self.assertEqual(output.getvalue().strip(), "4.24.0")
+        self.assertTrue(probe.call_args.kwargs["check"])
+        build.assert_not_called()
+        lock.assert_not_called()
+
+    def test_post_os_build_uses_pinned_release_not_new_upstream_release(self):
+        with patch("sys.argv", ["builder", "--firmware-eula-accepted",
+                                "--maintenance", "--version", "4.24.0"]), \
+                patch.object(candidate, "select_release") as select, \
+                patch.object(candidate, "candidate_lock", return_value=nullcontext()), \
+                patch.object(candidate, "require_build_window"), \
+                patch.object(Path, "exists", return_value=False), \
+                patch.object(candidate.subprocess, "run",
+                             return_value=SimpleNamespace(returncode=0, stdout="4.23.0")), \
+                patch.object(candidate, "build_candidate") as build:
+            candidate.main()
+        select.assert_not_called()
+        build.assert_called_once_with(candidate.ROOT_DEFAULT, "4.24.0", True)
+
+    def test_already_current_builder_is_an_explicit_noop(self):
+        with patch("sys.argv", ["builder", "--firmware-eula-accepted",
+                                "--maintenance", "--version", "4.24.0"]), \
+                patch.object(Path, "exists", return_value=False), \
+                patch.object(candidate, "candidate_lock", return_value=nullcontext()), \
+                patch.object(candidate, "require_build_window"), \
+                patch.object(candidate.subprocess, "run",
+                             return_value=SimpleNamespace(returncode=0, stdout="4.24.0")), \
+                patch.object(candidate, "build_candidate") as build, \
+                patch("sys.stdout", new_callable=io.StringIO) as output:
+            candidate.main()
+        build.assert_not_called()
+        self.assertIn("is current", output.getvalue())
+
+    def test_eda_build_cannot_enter_maintenance_owned_window(self):
+        for window, maintenance in ((True, False), (False, True)):
+            with self.subTest(window=window, maintenance=maintenance), \
+                    patch.object(Path, "exists", return_value=window), \
+                    self.assertRaisesRegex(RuntimeError, "blocked during maintenance"):
+                candidate.require_build_window(maintenance)
+        with patch.object(Path, "exists", return_value=True):
+            candidate.require_build_window(True)
+
+    def test_builder_and_installer_serialize_on_the_same_lock(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            locks = []
+            for module in (candidate, installer):
+                with patch.object(module.fcntl, "flock") as flock:
+                    with module.candidate_lock(root):
+                        locks.append((root / ".candidate.lock").stat().st_ino)
+                    self.assertEqual(flock.call_args.args[1], module.fcntl.LOCK_EX)
+            self.assertEqual(locks[0], locks[1])
+            with installer.candidate_lock(root):
+                contender = candidate.subprocess.run([
+                    candidate.sys.executable, "-c",
+                    "import fcntl,sys; "
+                    "f=open(sys.argv[1]); "
+                    "fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)",
+                    str(root / ".candidate.lock"),
+                ], capture_output=True, text=True, check=False)
+            self.assertNotEqual(contender.returncode, 0)
+            self.assertIn("BlockingIOError", contender.stderr)
+
+    def test_lock_permissions_are_private_and_existing_files_are_hardened(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / ".candidate.lock"
+            for module in (candidate, installer):
+                path.unlink(missing_ok=True)
+                with module.candidate_lock(root):
+                    self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
+                path.chmod(0o644)
+                with module.candidate_lock(root):
+                    self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
+                path.unlink()
+                target = root / "unchanged"
+                target.touch()
+                target.chmod(0o644)
+                path.symlink_to(target)
+                with self.assertRaises(OSError):
+                    with module.candidate_lock(root):
+                        self.fail("Symlink lock must not be opened")
+                self.assertEqual(stat.S_IMODE(target.stat().st_mode), 0o644)
+
     def test_only_common_stable_hailo8_releases_are_selected(self):
         self.assertEqual(candidate.version_key("v4.24.0"), (4, 24, 0))
         for invalid in ("5.4.0", "v4.25.0-rc1", "4.24", "latest"):
@@ -138,6 +247,37 @@ class HailoReleaseTests(unittest.TestCase):
 
 
 class HailoCandidateIntegrityTests(unittest.TestCase):
+    def test_current_maintenance_checks_actual_kernel_and_hardware(self):
+        kernel = candidate.os.uname().release
+        def command(argv, **kwargs):
+            field = argv[2] if argv[0] == "modinfo" else ""
+            return SimpleNamespace(stdout={"version": "4.24.0",
+                                           "vermagic": kernel + " SMP"} .get(field, ""))
+        with patch.object(installer, "run", side_effect=command) as run, \
+                patch.object(Path, "is_file", return_value=False):
+            installer.verify_installed(Path("unused"), "4.24.0")
+        self.assertIn(["hailortcli", "fw-control", "identify"],
+                      [call.args[0] for call in run.call_args_list])
+        with patch.object(installer, "run", side_effect=[
+            SimpleNamespace(stdout="4.24.0"), SimpleNamespace(stdout="older SMP"),
+        ]), self.assertRaisesRegex(ValueError, "running kernel"):
+            installer.maintenance_status(Path("unused"), "4.24.0")
+
+    def test_selected_invalid_artifact_is_not_treated_as_current(self):
+        with patch.object(installer, "run",
+                          return_value=SimpleNamespace(stdout="4.23.0", returncode=0)), \
+                patch.object(installer, "verify_artifact_integrity",
+                             side_effect=ValueError("checksum mismatch")), \
+                self.assertRaisesRegex(ValueError, "checksum mismatch"):
+            installer.maintenance_status(Path("unused"), "4.24.0")
+        with patch.object(installer, "run",
+                          return_value=SimpleNamespace(stdout="4.24.0", returncode=0)), \
+                patch.object(Path, "exists", return_value=True), \
+                patch.object(installer, "verify_artifact_integrity",
+                             side_effect=ValueError("checksum mismatch")), \
+                self.assertRaisesRegex(ValueError, "checksum mismatch"):
+            installer.maintenance_status(Path("unused"), "4.24.0")
+
     def test_selection_requires_newer_candidate_for_running_kernel(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -157,7 +297,7 @@ class HailoCandidateIntegrityTests(unittest.TestCase):
                 }
 
             with patch.object(
-                installer, "verify_candidate", side_effect=verify
+                installer, "verify_artifact_integrity", side_effect=verify
             ), patch.object(
                 installer,
                 "run",
@@ -178,7 +318,7 @@ class HailoCandidateIntegrityTests(unittest.TestCase):
                 installer.select_candidate(root)
             with patch.object(
                 installer,
-                "verify_candidate",
+                "verify_artifact_integrity",
                 return_value=(
                     root,
                     {
@@ -249,6 +389,47 @@ class HailoCandidateIntegrityTests(unittest.TestCase):
                 (path / "firmware/hailo8_fw.bin").write_bytes(b"corrupt")
                 with self.assertRaisesRegex(ValueError, "checksum mismatch"):
                     installer.candidate_status(root)
+
+    def test_current_source_runtime_survives_healthy_post_os_kernel_change(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            path = self.make_candidate(root)
+            manifest_path = path / "manifest.json"
+            manifest = json.loads(manifest_path.read_text())
+            manifest["kernel_release"] = "historical-build-kernel"
+            manifest_path.write_text(json.dumps(manifest))
+            original_manifest = manifest_path.read_bytes()
+            (root / "active-version").write_text("4.24.0\n")
+            link = root / "current"
+            link.symlink_to(path)
+            kernel = installer.os.uname().release
+
+            def command(argv, **kwargs):
+                if argv[0] == "modinfo":
+                    output = "4.24.0" if argv[2] == "version" else kernel + " SMP"
+                elif argv[0] == "git":
+                    output = "a" * 40
+                else:
+                    output = ""
+                return SimpleNamespace(stdout=output, returncode=0)
+
+            with patch.object(installer, "CURRENT_LINK", link), \
+                    patch.object(installer, "run", side_effect=command) as run:
+                self.assertFalse(installer.maintenance_status(root, "4.24.0")["candidate_ready"])
+                installer.verify_installed(root, "4.24.0")
+                with self.assertRaisesRegex(ValueError, "running kernel"):
+                    installer.verify_candidate(root, "4.24.0")
+                with self.assertRaisesRegex(ValueError, "running kernel"):
+                    installer.select_candidate(root, "4.24.0")
+                self.assertIn([str(link / "runtime/bin/hailortcli"),
+                               "fw-control", "identify"],
+                              [call.args[0] for call in run.call_args_list])
+            self.assertEqual(manifest_path.read_bytes(), original_manifest)
+            (path / "runtime/lib/libhailort.so.4.24.0").write_bytes(b"corrupt")
+            with patch.object(installer, "CURRENT_LINK", link), \
+                    patch.object(installer, "run", side_effect=command), \
+                    self.assertRaisesRegex(ValueError, "checksum mismatch"):
+                installer.verify_installed(root, "4.24.0")
 
     def test_no_candidate_is_distinct_from_failed_installed_probe(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -400,7 +581,7 @@ class HailoAnsibleWorkflowTests(unittest.TestCase):
             if task["name"] == "Activate approved Hailo source candidate"
         )
         self.assertEqual(
-            activation["when"], "rust_maintenance_target == 'hailo'"
+            activation["when"], "rust_maintenance_target == 'hailo' or rust_maintenance_all_hailo | bool"
         )
         install_tasks = self.tasks("roles/rust_maintenance/tasks/hailo.yml")
         install = next(
@@ -413,6 +594,82 @@ class HailoAnsibleWorkflowTests(unittest.TestCase):
             install["failed_when"],
             "rust_maintenance_hailo_install.rc not in [0, 10]",
         )
+        rollback_failure = next(task for task in tasks if
+                                task["name"].startswith("Report Hailo rollback as unsuccessful"))
+        self.assertIn("ansible.builtin.fail", rollback_failure)
+        self.assertGreater(tasks.index(rollback_failure), tasks.index(workflow))
+
+    def test_all_hardware_gate_ignores_inference_and_checks_approval_upfront(self):
+        tasks = self.tasks("roles/rust_maintenance/tasks/main.yml")
+        gate = next(task["ansible.builtin.set_fact"]["rust_maintenance_all_hailo"]
+                    for task in tasks if task["name"].startswith("Remember whether All"))
+        approval = next(task for task in tasks
+                        if task["name"] == "Require Hailo approval and valid version before downtime")
+        env = Environment(undefined=StrictUndefined)
+        env.filters["bool"] = bool
+        env.filters["from_json"] = json.loads
+        env.tests["match"] = lambda text, pattern: __import__("re").match(pattern, text) is not None
+        for target in ("all", "hailo", "os", "os-rust", "fex", "rust"):
+            for hardware in (False, True):
+                for inference in (False, True):
+                    context = dict(
+                        rust_maintenance_target=target, rust_telemetry_hat_enabled=inference,
+                        rust_maintenance_hailo_version="",
+                        rust_maintenance_hailo_firmware_eula_accepted=False)
+                    if target == "all":
+                        context["rust_maintenance_hardware"] = {
+                            "stdout": json.dumps({"hailo": [{"address": "0001:01:00.0"}]
+                                                  if hardware else []})}
+                    with self.subTest(target=target, hardware=hardware, inference=inference):
+                        included = target == "all" and hardware
+                        self.assertEqual(env.from_string(gate).render(**context) == "True", included)
+                        context["rust_maintenance_all_hailo"] = included
+                        applies = env.compile_expression(approval["when"])(**context)
+                        self.assertEqual(applies, target == "hailo" or included)
+                        if applies:
+                            self.assertFalse(env.compile_expression(
+                                approval["ansible.builtin.assert"]["that"][0])(**context))
+        preflight = next(i for i, task in enumerate(tasks)
+                         if task["name"].startswith("Validate and pin common"))
+        downtime = next(i for i, task in enumerate(tasks)
+                        if task["name"] == "Acquire exclusive maintenance window")
+        self.assertLess(preflight, downtime)
+        self.assertLess(tasks.index(approval), preflight)
+        detector = next(task for task in tasks if
+                        task["name"] == "Detect Hailo PCI hardware without provisioning or enabling inference")
+        self.assertFalse(detector["changed_when"])
+        self.assertEqual(detector["when"], "rust_maintenance_target == 'all'")
+        workflow = next(task["block"] for task in tasks if "block" in task)
+        names = [task["name"] for task in workflow]
+        self.assertLess(names.index("Run OS job"), names.index("Activate approved Hailo source candidate"))
+        self.assertLess(names.index("Wait for existing Hailo candidate work before announcing downtime"),
+                        names.index("Announce countdown and request world save"))
+        for name, targets in (
+            ("Run OS job", ("os", "os-rust", "all")),
+            ("Run pinned FEX job", ("fex", "all")),
+            ("Run Rust job", ("rust", "os-rust", "all")),
+        ):
+            task = next(task for task in workflow if task["name"] == name)
+            for target in ("all", "hailo", "os", "os-rust", "fex", "rust"):
+                self.assertEqual(env.compile_expression(task["when"])(
+                    rust_maintenance_target=target), target in targets)
+
+    def test_all_refreshes_facts_and_reuses_actual_kernel_builder(self):
+        os_tasks = self.tasks("roles/rust_maintenance/tasks/os.yml")
+        refresh = next(task for task in os_tasks if "ansible.builtin.setup" in task)
+        self.assertEqual(refresh["when"], "rust_maintenance_all_hailo | bool")
+        self.assertGreater(os_tasks.index(refresh), next(
+            i for i, task in enumerate(os_tasks) if "ansible.builtin.reboot" in task))
+        hailo = self.tasks("roles/rust_maintenance/tasks/hailo.yml")
+        self.assertEqual(hailo[0]["ansible.builtin.include_role"]["name"], "hailo_candidate")
+        self.assertTrue(hailo[0]["vars"]["hailo_candidate_maintenance"])
+        builder = self.tasks("roles/hailo_candidate/tasks/main.yml")
+        kernel = next(task for task in builder if task["name"].startswith("Read exact running"))
+        self.assertEqual(kernel["ansible.builtin.command"], "uname -r")
+        status = next(task for task in builder if task["name"].startswith("Validate candidate readiness"))
+        self.assertIn("--maintenance-status", status["ansible.builtin.command"]["argv"])
+        publication = next(task for task in builder if task["name"].startswith("Publish validated"))
+        self.assertEqual(publication["when"], "not hailo_candidate_maintenance | bool")
 
     def test_existing_provisioning_respects_source_managed_runtime(self):
         tasks = self.tasks("roles/pi_hardware/tasks/hailo.yml")

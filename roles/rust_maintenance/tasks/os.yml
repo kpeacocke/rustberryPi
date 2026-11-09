@@ -16,6 +16,11 @@
     msg: OS packages upgraded; reboot was explicitly deferred. Schedule a reboot to activate kernel and library changes.
   when: not rust_maintenance_os_reboot | bool
 
+- name: Refresh running platform facts after OS work
+  ansible.builtin.setup:
+    gather_subset: [min]
+  when: rust_maintenance_all_hailo | bool
+
 - name: Pause timers and collector again after boot activation
   ansible.builtin.systemd_service:
     name: '{{ item.item }}'

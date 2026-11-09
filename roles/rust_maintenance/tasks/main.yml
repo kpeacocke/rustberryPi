@@ -9,11 +9,6 @@
       - rust_maintenance_health_timeout | int >= 60
       - ansible_facts['distribution'] == 'Debian'
       - >-
-        rust_maintenance_target != 'hailo' or
-        ((rust_maintenance_hailo_version == '' or
-          rust_maintenance_hailo_version is match('^4\.[0-9]+\.[0-9]+$')) and
-        rust_maintenance_hailo_firmware_eula_accepted | bool)
-      - >-
         rust_maintenance_target not in ['os', 'os-rust', 'all'] or not rust_maintenance_os_reboot | bool
         or ansible_connection | default('ssh') != 'local'
       - >-
@@ -22,9 +17,75 @@
         rust_maintenance_fex_version is match('^[A-Za-z0-9._-]+$'))
     fail_msg: >-
       Choose os, fex, rust, os-rust, all or hailo. FEX requires an explicit commit and version.
-      Hailo requires a ready local candidate and the private firmware EULA
-      acceptance host variable. Rebooting OS jobs require an SSH controller;
+      Hailo requires private firmware EULA approval; standalone Hailo also requires a ready local candidate.
+      Rebooting OS jobs require an SSH controller;
       local jobs must set rust_maintenance_os_reboot=false.
+
+- name: Install existing read-only peripheral detector for All
+  ansible.builtin.copy:
+    src: '{{ playbook_dir }}/../roles/pi_hardware/files/detect.py'
+    dest: /usr/local/libexec/rustberrypi-detect-hardware.py
+    owner: root
+    group: root
+    mode: '0755'
+  when: rust_maintenance_target == 'all'
+
+- name: Detect Hailo PCI hardware without provisioning or enabling inference
+  ansible.builtin.command:
+    argv: [/usr/bin/python3, /usr/local/libexec/rustberrypi-detect-hardware.py]
+  register: rust_maintenance_hardware
+  changed_when: false
+  when: rust_maintenance_target == 'all'
+
+- name: Remember whether All includes detected Hailo hardware
+  ansible.builtin.set_fact:
+    rust_maintenance_all_hailo: >-
+      {{ rust_maintenance_target == 'all' and (rust_maintenance_hardware.stdout | from_json).hailo | length > 0 }}
+
+- name: Require Hailo approval and valid version before downtime
+  ansible.builtin.assert:
+    that:
+      - rust_maintenance_hailo_firmware_eula_accepted | bool
+      - rust_maintenance_hailo_version == '' or rust_maintenance_hailo_version is match('^4\.[0-9]+\.[0-9]+$')
+    fail_msg: Hailo maintenance requires private firmware EULA approval and an optional exact stable 4.x version.
+  when: rust_maintenance_target == 'hailo' or rust_maintenance_all_hailo | bool
+
+- name: Explicitly skip Hailo for All on non-HAT hosts
+  ansible.builtin.debug:
+    msg: All includes OS, FEX and Rust only; no Hailo PCI hardware was detected, so Hailo is skipped.
+  when: rust_maintenance_target == 'all' and not rust_maintenance_all_hailo | bool
+
+- name: Validate detected Hailo host platform before downtime
+  ansible.builtin.assert:
+    that:
+      - ansible_facts['architecture'] == 'aarch64'
+      - ansible_facts['distribution_major_version'] == '13'
+    fail_msg: All Hailo source builds require a previously provisioned Debian 13 arm64 HAT host.
+  when: rust_maintenance_all_hailo | bool
+
+- name: Install release selector before All downtime
+  ansible.builtin.copy:
+    src: '{{ playbook_dir }}/../tools/hailo_candidate.py'
+    dest: /usr/local/libexec/rustberrypi-hailo-candidate.py
+    owner: root
+    group: root
+    mode: '0750'
+  when: rust_maintenance_all_hailo | bool
+
+- name: Validate and pin common stable Hailo release before All downtime
+  ansible.builtin.command:
+    argv: >-
+      {{ ['/usr/bin/python3', '/usr/local/libexec/rustberrypi-hailo-candidate.py',
+          '--firmware-eula-accepted', '--select-release'] +
+         (['--version', rust_maintenance_hailo_version] if rust_maintenance_hailo_version | length > 0 else []) }}
+  register: rust_maintenance_hailo_release
+  changed_when: false
+  when: rust_maintenance_all_hailo | bool
+
+- name: Remember approved release across OS reboot
+  ansible.builtin.set_fact:
+    rust_maintenance_hailo_release_version: '{{ rust_maintenance_hailo_release.stdout | trim }}'
+  when: rust_maintenance_all_hailo | bool
 
 - name: Install candidate validator before announcing downtime
   ansible.builtin.copy:
@@ -33,7 +94,7 @@
     owner: root
     group: root
     mode: '0750'
-  when: rust_maintenance_target == 'hailo'
+  when: rust_maintenance_target == 'hailo' or rust_maintenance_all_hailo | bool
 
 - name: Select and validate a ready Hailo candidate before downtime
   ansible.builtin.command:
@@ -104,6 +165,14 @@
 
 - name: Execute selected jobs inside one maintenance window
   block:
+    - name: Wait for existing Hailo candidate work before announcing downtime
+      ansible.builtin.command:
+        argv: [/usr/bin/python3, /usr/local/libexec/rustberrypi-hailo-install.py, --quiesce]
+      async: 21660
+      poll: 30
+      changed_when: false
+      when: rust_maintenance_target == 'hailo' or rust_maintenance_all_hailo | bool
+
     - name: Create service guard directories
       ansible.builtin.file:
         path: '/etc/systemd/system/{{ item }}.d'
@@ -210,7 +279,7 @@
 
     - name: Activate approved Hailo source candidate
       ansible.builtin.include_tasks: hailo.yml
-      when: rust_maintenance_target == 'hailo'
+      when: rust_maintenance_target == 'hailo' or rust_maintenance_all_hailo | bool
 
     - name: Require 4 KB kernel pages after maintenance
       ansible.builtin.command: getconf PAGESIZE
@@ -281,6 +350,7 @@
         owner: root
         group: root
         mode: '0644'
+      when: rust_maintenance_hailo_install.rc | default(0) != 10
 
     - name: Report verified completion
       ansible.builtin.debug:
@@ -288,6 +358,12 @@
           Maintenance {{ rust_maintenance_target }} recovered; game query and authenticated RCON are healthy.
           Dashboard evidence refresh follows after releasing the maintenance window.
           Backup {{ rust_maintenance_backup.stdout | trim }}.
+      when: rust_maintenance_hailo_install.rc | default(0) != 10
+
+    - name: Report game recovery without claiming a successful Hailo upgrade
+      ansible.builtin.debug:
+        msg: Rust recovered and backup verified, but Hailo activation was rolled back; this job will fail after board refresh.
+      when: rust_maintenance_hailo_install.rc | default(0) == 10
 
     - name: Release completed maintenance window
       ansible.builtin.file:
@@ -343,6 +419,13 @@
 - name: Refresh maintenance boards after successful maintenance
   ansible.builtin.include_role:
     name: rust_maintenance_refresh
+
+- name: Report Hailo rollback as unsuccessful maintenance after game recovery
+  ansible.builtin.fail:
+    msg: >-
+      Rust recovered, but Hailo activation failed and was rolled back.
+      Review the hardware-validation error in the job output; Hailo was not upgraded.
+  when: rust_maintenance_hailo_install.rc | default(0) == 10
 
 - name: Report maintenance and dashboard refresh completion
   ansible.builtin.debug:
