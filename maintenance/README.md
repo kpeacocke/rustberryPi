@@ -26,11 +26,14 @@ playbooks to implement “all”: that would cause three countdowns and restarts
 
 ## What happens
 
-1. Validate selection, deployed runtime, storage UUID, NAS mount and running game.
+1. Validate selection, deployed runtime, storage UUID and NAS mount. If Rust is
+   down, skip the RCON quiet period, player warning and world-save request.
 2. Acquire an atomic maintenance marker; reject overlapping or interrupted jobs.
 3. Pause backup/update-check timers and telemetry, wait for existing background
-   operations, and give RCON a quiet minute before taking its connection.
-4. Query player count and send in-game announcements. Default warning: ten minutes,
+   operations, and give RCON a quiet minute before taking its connection when
+   Rust is running.
+4. When Rust is running, query player count and send in-game announcements.
+   Default warning: ten minutes,
    with reminders at five minutes, one minute, ten seconds and shutdown. Shorter
    countdowns omit reminders outside their range. Zero still announces shutdown.
    A failed RCON acknowledgement aborts before taking Rust offline.

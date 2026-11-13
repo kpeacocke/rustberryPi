@@ -101,6 +101,19 @@ class MaintenanceTests(unittest.TestCase):
         install = next(task for task in refresh if task['name'] == 'Install current dashboard maintenance probes')
         self.assertEqual(install['ansible.builtin.copy']['dest'], '/opt/rustberrypi/telemetry/maintenance.py')
 
+    def test_maintenance_skips_rcon_warning_when_rust_is_down(self):
+        tasks = yaml.safe_load((ROOT / 'roles/rust_maintenance/tasks/main.yml').read_text())
+        state = next(task for task in tasks if task['name'] == 'Determine whether Rust is running before maintenance')
+        self.assertEqual(state['ansible.builtin.command'], 'systemctl is-active rust.service')
+        self.assertEqual(state['failed_when'],
+                         "rust_maintenance_rust_state.stdout not in ['active', 'inactive', 'failed']")
+
+        workflow = next(task for task in tasks if task['name'] == 'Execute selected jobs inside one maintenance window')
+        for name in ('Allow a quiet RCON interval before announcing maintenance',
+                     'Announce countdown and request world save'):
+            task = next(item for item in workflow['block'] if item['name'] == name)
+            self.assertEqual(task['when'], "rust_maintenance_rust_state.stdout == 'active'")
+
     def test_fex_activation_preserves_service_world_and_previous_unit(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

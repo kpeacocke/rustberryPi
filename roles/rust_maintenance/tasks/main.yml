@@ -202,9 +202,11 @@
     argv: [mountpoint, -q, '{{ rust_backup_mount }}']
   changed_when: false
 
-- name: Require a running game before a scheduled maintenance window # noqa: command-instead-of-module -- Read-only state check.
-  ansible.builtin.command: systemctl is-active --quiet rust.service
+- name: Determine whether Rust is running before maintenance # noqa: command-instead-of-module -- Read-only state check.
+  ansible.builtin.command: systemctl is-active rust.service
+  register: rust_maintenance_rust_state
   changed_when: false
+  failed_when: rust_maintenance_rust_state.stdout not in ['active', 'inactive', 'failed']
 
 - name: Record initial service and timer states
   ansible.builtin.command:
@@ -268,6 +270,7 @@
     - name: Allow a quiet RCON interval before announcing maintenance
       ansible.builtin.pause:
         seconds: 60
+      when: rust_maintenance_rust_state.stdout == 'active'
 
     - name: Announce countdown and request world save
       ansible.builtin.command:
@@ -282,6 +285,7 @@
       async: 3700
       poll: 10
       changed_when: true
+      when: rust_maintenance_rust_state.stdout == 'active'
 
     - name: Mark offline phase persistently
       ansible.builtin.copy:
